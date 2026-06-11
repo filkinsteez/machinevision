@@ -6,6 +6,7 @@ export function MediaPanel() {
   const selected = useStore((s) => s.selectedAssetId);
   const upload = useStore((s) => s.upload);
   const selectAsset = useStore((s) => s.selectAsset);
+  const deleteAsset = useStore((s) => s.deleteAsset);
   const fileRef = useRef<HTMLInputElement>(null);
   const [drag, setDrag] = useState(false);
 
@@ -44,13 +45,22 @@ export function MediaPanel() {
             onClick={() => selectAsset(a.id)}
           >
             {a.thumbnailUrl && <img src={a.thumbnailUrl} alt="" />}
-            <div>
+            <div className="grow">
               <div className="name">{a.name}</div>
               <div className="dim">
                 {a.status !== "ready" ? a.status.toUpperCase()
                   : `${a.width}×${a.height}${a.type === "video" ? ` · ${a.frameCount}f` : ""}`}
               </div>
             </div>
+            <button
+              title="delete asset and its passes"
+              onClick={(e) => {
+                e.stopPropagation();
+                if (window.confirm(`Delete ${a.name} and all of its vision passes?`)) {
+                  deleteAsset(a.id);
+                }
+              }}
+            >✕</button>
           </li>
         ))}
       </ul>

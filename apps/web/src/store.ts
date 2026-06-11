@@ -27,6 +27,8 @@ interface State {
   refresh: () => Promise<void>;
   selectAsset: (id: string | null) => void;
   upload: (file: File) => Promise<void>;
+  deleteAsset: (id: string) => Promise<void>;
+  pruneLayerSources: () => void;
   setTool: (t: Tool) => void;
   addPromptPoint: (p: PromptPoint) => void;
   clearPrompt: () => void;
@@ -116,6 +118,37 @@ export const useStore = create<State>((set, get) => ({
     }
   },
 
+  deleteAsset: async (id) => {
+    try {
+      await api.deleteAsset(id);
+      if (get().selectedAssetId === id) {
+        set({ selectedAssetId: null, visiblePassId: null, playing: false, currentFrame: 0 });
+      }
+      await get().refresh();
+      const remaining = get().assets;
+      if (!get().selectedAssetId && remaining.length) {
+        set({ selectedAssetId: remaining[remaining.length - 1].id });
+      }
+      get().pruneLayerSources();
+    } catch (e) { set({ error: String(e) }); }
+  },
+
+  pruneLayerSources: () => {
+    const valid = new Set(get().passes.map((p) => p.id));
+    const layers = get().layers();
+    let changed = false;
+    const next = layers.map((l) => {
+      const entries = Object.entries(l.sources);
+      if (!entries.some(([, v]) => v && !valid.has(v))) return l;
+      changed = true;
+      return {
+        ...l,
+        sources: Object.fromEntries(entries.map(([k, v]) => [k, v && valid.has(v) ? v : null])),
+      };
+    });
+    if (changed) get().setLayers(next);
+  },
+
   setTool: (tool) => set({ tool }),
   addPromptPoint: (p) => set((s) => ({ promptPoints: [...s.promptPoints, p] })),
   clearPrompt: () => set({ promptPoints: [], promptBox: null }),
@@ -175,6 +208,7 @@ export const useStore = create<State>((set, get) => ({
     await api.deletePass(id);
     if (get().visiblePassId === id) set({ visiblePassId: null });
     await get().refresh();
+    get().pruneLayerSources();
   },
 
   setVisiblePass: (visiblePassId) => set({ visiblePassId }),

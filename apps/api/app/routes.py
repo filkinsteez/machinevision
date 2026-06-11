@@ -132,12 +132,16 @@ def get_asset(asset_id: str):
 def delete_asset(asset_id: str):
     with SessionLocal() as db:
         asset = _get_or_404(db, Asset, asset_id)
+        pass_ids = [v.id for v in db.query(VisionPass).filter(VisionPass.asset_id == asset_id)]
+        db.query(VisionPass).filter(VisionPass.asset_id == asset_id).delete()
         db.delete(asset)
         db.commit()
     storage.delete_prefix(f"sources/{asset_id}")
     storage.delete_prefix(f"proxies/{asset_id}")
     storage.delete_prefix(f"thumbnails/{asset_id}")
-    return {"deleted": asset_id}
+    for pid in pass_ids:
+        storage.delete_prefix(f"vision-passes/{pid}")
+    return {"deleted": asset_id, "deletedPasses": pass_ids}
 
 
 # ----------------------------------------------------------------- vision passes
