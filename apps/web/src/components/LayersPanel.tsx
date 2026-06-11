@@ -10,16 +10,24 @@ export function LayersPanel() {
   const selected = useStore((s) => s.selectedLayerId);
   const selectLayer = useStore((s) => s.selectLayer);
   const [adding, setAdding] = useState(false);
-  const [dragIdx, setDragIdx] = useState<number | null>(null);
-  const [overIdx, setOverIdx] = useState<number | null>(null);
+  const [dragging, setDragging] = useState<string | null>(null);
+  const [over, setOver] = useState<{ idx: number; below: boolean } | null>(null);
 
-  const drop = (e: React.DragEvent, target: number) => {
+  const hoverHalf = (e: React.DragEvent): boolean => {
+    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    return e.clientY > r.top + r.height / 2; // true = insert below this row
+  };
+
+  const drop = (e: React.DragEvent, idx: number, below: boolean) => {
     const id = e.dataTransfer.getData("text/plain");
     const from = layers.findIndex((l) => l.id === id);
-    if (from < 0 || from === target) return;
+    let insertAt = idx + (below ? 1 : 0);
+    if (from < 0) return;
+    if (insertAt > from) insertAt -= 1;
+    if (insertAt === from) return;
     const next = [...layers];
     const [moved] = next.splice(from, 1);
-    next.splice(target > from ? target - 1 : target, 0, moved);
+    next.splice(insertAt, 0, moved);
     setLayers(next);
   };
 
@@ -51,19 +59,24 @@ export function LayersPanel() {
             draggable
             className={[
               l.id === selected ? "sel" : "",
-              dragIdx === i ? "dragging" : "",
-              overIdx === i && dragIdx !== null && dragIdx !== i ? "drop-target" : "",
+              dragging === l.id ? "dragging" : "",
+              over?.idx === i && dragging && dragging !== l.id
+                ? (over.below ? "drop-below" : "drop-above") : "",
             ].join(" ")}
             onClick={() => selectLayer(l.id)}
             onDragStart={(e) => {
-              setDragIdx(i);
+              setDragging(l.id);
               e.dataTransfer.effectAllowed = "move";
               e.dataTransfer.setData("text/plain", l.id);
             }}
-            onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; setOverIdx(i); }}
-            onDragLeave={() => setOverIdx((o) => (o === i ? null : o))}
-            onDrop={(e) => { e.preventDefault(); drop(e, i); setDragIdx(null); setOverIdx(null); }}
-            onDragEnd={() => { setDragIdx(null); setOverIdx(null); }}
+            onDragOver={(e) => {
+              e.preventDefault();
+              e.dataTransfer.dropEffect = "move";
+              setOver({ idx: i, below: hoverHalf(e) });
+            }}
+            onDragLeave={() => setOver((o) => (o?.idx === i ? null : o))}
+            onDrop={(e) => { e.preventDefault(); drop(e, i, hoverHalf(e)); setDragging(null); setOver(null); }}
+            onDragEnd={() => { setDragging(null); setOver(null); }}
           >
             <span className="grip" title="drag to reorder">⠿</span>
             <button
@@ -83,14 +96,6 @@ export function LayersPanel() {
             }}>✕</button>
           </li>
         ))}
-        {/* drop zone for moving a layer to the end */}
-        {dragIdx !== null && (
-          <li
-            className={`drop-end ${overIdx === layers.length ? "drop-target" : ""}`}
-            onDragOver={(e) => { e.preventDefault(); setOverIdx(layers.length); }}
-            onDrop={(e) => { e.preventDefault(); drop(e, layers.length); setDragIdx(null); setOverIdx(null); }}
-          >⌄ move to end</li>
-        )}
         {!layers.length && <li className="dim empty">no layers — add one or apply a preset</li>}
       </ul>
     </section>
