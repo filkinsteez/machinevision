@@ -11,7 +11,7 @@ import cv2
 import numpy as np
 
 from . import media, storage
-from .db import ExportRecord, SessionLocal, VisionPass
+from .db import Asset, ExportRecord, SessionLocal, VisionPass
 from .jobs import handler
 from .vision import passes
 
@@ -84,7 +84,14 @@ def run_bake_frames(ctx):
     size = (w // 2 * 2, h // 2 * 2)
     codec, ext, mime = media.pick_encoder()
     out_key = f"exports/{export_id}/baked.{ext}"
-    writer = media.VideoWriter(storage.open_for_write(out_key), fps, size)
+    audio_from = None
+    if p.get("assetId"):
+        with SessionLocal() as db:
+            asset = db.get(Asset, p["assetId"])
+        if asset and asset.proxy_key:
+            audio_from = storage.path_for(asset.proxy_key)
+    writer = media.VideoWriter(storage.open_for_write(out_key), fps, size,
+                               audio_from=audio_from)
     for i, fp in enumerate(frames):
         if ctx.cancelled:
             writer.close()
@@ -97,6 +104,7 @@ def run_bake_frames(ctx):
         writer.write(img)
         if i % 30 == 0:
             ctx.update(i / len(frames), f"encoding frame {i}/{len(frames)}")
+    writer.write_audio()
     writer.close()
     storage.delete_prefix(session_prefix)
     manifest = {"engine": "preview-bake/0.1", "frames": len(frames), "fps": fps,

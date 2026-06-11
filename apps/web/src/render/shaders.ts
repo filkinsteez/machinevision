@@ -42,6 +42,10 @@ export const SHADERS: Record<string, string> = {
   copy: COMMON + `
 void main() { frag = texture(u_src, v_uv); }`,
 
+  // final on-screen blit: GL's bottom-left origin vs image top-left needs one flip
+  copy_flip: COMMON + `
+void main() { frag = texture(u_src, vec2(v_uv.x, 1.0 - v_uv.y)); }`,
+
   matte_view: COMMON + `
 uniform vec3 u_color;
 uniform float u_amount;

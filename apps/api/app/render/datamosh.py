@@ -175,7 +175,9 @@ def run_datamosh(ctx):
         if ctx.cancelled:
             return None
 
-        baked = media.VideoWriter(storage.open_for_write(baked_key), fps, size)
+        # baked output carries the source audio; the datamosh pass stays silent
+        baked = media.VideoWriter(storage.open_for_write(baked_key), fps, size,
+                                  audio_from=proxy_path)
         moshpass = media.VideoWriter(storage.open_for_write(mosh_key), fps, size)
         clean_iter = media.iter_video_frames(proxy_path, size)
         mosh_iter = iter_mosh_frames(substrate, drop_iframes, dup_every, dup_count,
@@ -201,6 +203,9 @@ def run_datamosh(ctx):
         finally:
             mosh_iter.close()  # release the substrate file before tempdir cleanup
             clean_iter.close()
+            if not ctx.cancelled:
+                ctx.update(0.96, "muxing audio")
+                baked.write_audio()
             baked.close()
             moshpass.close()
         if ctx.cancelled:

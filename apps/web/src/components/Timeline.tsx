@@ -5,6 +5,8 @@ export function Timeline() {
   const asset = useStore((s) => s.assets.find((a) => a.id === s.selectedAssetId) ?? null);
   const frame = useStore((s) => s.currentFrame);
   const playing = useStore((s) => s.playing);
+  const muted = useStore((s) => s.muted);
+  const setMuted = useStore((s) => s.setMuted);
   if (!asset || asset.status !== "ready") return <div className="timeline" />;
   const frameCount = asset.frameCount ?? 1;
   const isVideo = asset.type === "video";
@@ -21,6 +23,16 @@ export function Timeline() {
           {playing ? "PAUSE" : "PLAY"}
         </button>
         <button onClick={() => previewController.seek(Math.min(frame + 1, frameCount - 1))} title="step forward">₁</button>
+        <button
+          className={muted ? "" : "active"}
+          disabled={!isVideo}
+          title="toggle audio"
+          onClick={() => {
+            const next = !muted;
+            setMuted(next);
+            if (previewController.video) previewController.video.muted = next;
+          }}
+        >{muted ? "MUTE" : "SND"}</button>
       </div>
       <input
         type="range"

@@ -55,9 +55,9 @@ export const api = {
     const res = await fetch(`/api/exports/frame-session/${sessionId}/frames/${n}`, { method: "PUT", body: blob });
     if (!res.ok) throw new Error(`frame upload failed: ${res.status}`);
   },
-  finalizeBake: (sessionId: string, projectId: string, fps: number, kind: "video" | "image") =>
+  finalizeBake: (sessionId: string, projectId: string, fps: number, kind: "video" | "image", assetId?: string) =>
     http<{ export: ExportRecord; job: Job }>("POST", `/api/exports/frame-session/${sessionId}/finalize`,
-      { projectId, fps, kind }),
+      { projectId, fps, kind, assetId }),
 
   listJobs: (projectId: string) => http<Job[]>("GET", `/api/projects/${projectId}/jobs`),
   cancelJob: (id: string) => http("POST", `/api/jobs/${id}/cancel`),

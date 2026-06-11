@@ -100,12 +100,24 @@ def read_frame(path: Path, frame_index: int, size: tuple[int, int] | None = None
     raise IndexError(f"frame {frame_index} out of range")
 
 
+def has_audio(path: Path) -> bool:
+    try:
+        with av.open(str(path)) as c:
+            return any(s.type == "audio" for s in c.streams)
+    except Exception:
+        return False
+
+
 class VideoWriter:
-    """Streaming encoder. Pass bgr ndarrays of constant size."""
+    """Streaming encoder. Pass bgr ndarrays of constant size.
+
+    `audio_from` declares an audio track up front (mp4 muxers require all
+    streams before the header); call write_audio() after the video frames.
+    """
 
     def __init__(self, path: Path, fps: float, size: tuple[int, int],
                  codec: str | None = None, bitrate: int = 6_000_000,
-                 codec_options: dict | None = None):
+                 codec_options: dict | None = None, audio_from: Path | None = None):
         if codec is None:
             codec = pick_encoder()[0]
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -118,9 +130,38 @@ class VideoWriter:
         if codec == "libx264" and not codec_options:
             self.stream.options = {"crf": "20", "preset": "veryfast"}
 
+        self.audio_src: Path | None = None
+        self.audio_stream = None
+        if audio_from is not None and has_audio(audio_from):
+            is_mp4 = str(path).lower().endswith((".mp4", ".mov"))
+            acodec = "aac" if is_mp4 else "libopus"
+            arate = 48000
+            try:
+                self.audio_stream = self.container.add_stream(acodec, rate=arate)
+                self.audio_stream.bit_rate = 128_000
+                self._aformat = "fltp" if acodec == "aac" else "flt"
+                self._arate = arate
+                self.audio_src = audio_from
+            except Exception:
+                self.audio_stream = None
+
     def write(self, bgr: np.ndarray):
         frame = av.VideoFrame.from_ndarray(bgr, format="bgr24")
         for packet in self.stream.encode(frame):
+            self.container.mux(packet)
+
+    def write_audio(self):
+        """Transcode the audio track from audio_from into this container."""
+        if self.audio_stream is None or self.audio_src is None:
+            return
+        resampler = av.AudioResampler(format=self._aformat, layout="stereo", rate=self._arate)
+        with av.open(str(self.audio_src)) as inp:
+            ais = next(s for s in inp.streams if s.type == "audio")
+            for frame in inp.decode(ais):
+                for f in resampler.resample(frame):
+                    for packet in self.audio_stream.encode(f):
+                        self.container.mux(packet)
+        for packet in self.audio_stream.encode():
             self.container.mux(packet)
 
     def close(self):
@@ -135,7 +176,7 @@ def make_proxy(src: Path, dst_dir: Path, max_h: int, progress=None) -> dict:
     codec, ext, mime = pick_encoder()
     dst = dst_dir / f"proxy.{ext}"
     fps = meta["fps"] or 30.0
-    writer = VideoWriter(dst, fps, size)
+    writer = VideoWriter(dst, fps, size, audio_from=src)
     count = 0
     total = meta["frameCount"] or 1
     for idx, img in iter_video_frames(src, size):
@@ -143,6 +184,7 @@ def make_proxy(src: Path, dst_dir: Path, max_h: int, progress=None) -> dict:
         count += 1
         if progress and idx % 30 == 0:
             progress(min(idx / total, 0.99), "encoding proxy")
+    writer.write_audio()
     writer.close()
     return {"path": dst, "mime": mime, "width": size[0], "height": size[1],
             "fps": fps, "frameCount": count}

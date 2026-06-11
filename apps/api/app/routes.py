@@ -361,6 +361,7 @@ class FinalizeBake(BaseModel):
     projectId: str
     fps: float = 30.0
     kind: str = "video"  # video | image
+    assetId: Optional[str] = None  # audio source for the bake
 
 
 @router.post("/exports/frame-session")
@@ -385,7 +386,8 @@ def finalize_bake(session_id: str, body: FinalizeBake):
                             format="mp4" if is_video else "png", status="queued"))
         db.commit()
     job = jobs.submit("export.bake_frames" if is_video else "export.baked_image",
-                      {"exportId": export_id, "sessionId": session_id, "fps": body.fps},
+                      {"exportId": export_id, "sessionId": session_id, "fps": body.fps,
+                       "assetId": body.assetId},
                       body.projectId)
     with SessionLocal() as db:
         return {"export": db.get(ExportRecord, export_id).to_dict(), "job": job}

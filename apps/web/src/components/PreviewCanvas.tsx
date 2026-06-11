@@ -86,11 +86,12 @@ export function PreviewCanvas() {
     if (asset.type === "video") {
       const v = document.createElement("video");
       v.src = asset.proxyUrl;
-      v.muted = true;
+      v.muted = useStore.getState().muted;
       v.playsInline = true;
       v.preload = "auto";
       videoRef.current = v;
       previewController.video = v;
+      (window as { __mvVideo?: HTMLVideoElement }).__mvVideo = v;
       v.addEventListener("ended", () => useStore.getState().setPlaying(false));
     } else {
       fetch(asset.proxyUrl).then((r) => r.blob()).then(createImageBitmap)

@@ -58,5 +58,5 @@ export async function bakeExport(opts: {
     await api.uploadBakeFrame(sessionId, f, blob);
     onProgress((f + 1) / frameCount);
   }
-  await api.finalizeBake(sessionId, projectId, fps, asset.type === "video" ? "video" : "image");
+  await api.finalizeBake(sessionId, projectId, fps, asset.type === "video" ? "video" : "image", asset.id);
 }

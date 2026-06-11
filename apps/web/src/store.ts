@@ -20,6 +20,7 @@ interface State {
   promptBox: [number, number, number, number] | null;
   playing: boolean;
   currentFrame: number;
+  muted: boolean;
   baking: { active: boolean; progress: number } | null;
   error: string | null;
 
@@ -49,6 +50,7 @@ interface State {
 
   setPlaying: (p: boolean) => void;
   setFrame: (f: number) => void;
+  setMuted: (m: boolean) => void;
   setBaking: (b: { active: boolean; progress: number } | null) => void;
   setError: (e: string | null) => void;
 }
@@ -76,6 +78,7 @@ export const useStore = create<State>((set, get) => ({
   promptBox: null,
   playing: false,
   currentFrame: 0,
+  muted: false,
   baking: null,
   error: null,
 
@@ -251,6 +254,7 @@ export const useStore = create<State>((set, get) => ({
 
   setPlaying: (playing) => set({ playing }),
   setFrame: (currentFrame) => set({ currentFrame }),
+  setMuted: (muted) => set({ muted }),
   setBaking: (baking) => set({ baking }),
   setError: (error) => set({ error }),
 }));

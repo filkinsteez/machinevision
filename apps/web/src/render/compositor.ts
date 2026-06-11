@@ -183,12 +183,12 @@ export class Compositor {
       [target, other] = [other, target];
     }
 
-    // blit final to canvas
+    // blit final to canvas (flipped: FBO chain is bottom-up, display is top-down)
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     gl.viewport(0, 0, this.width, this.height);
-    const copy = this.programs.get("copy")!;
-    gl.useProgram(copy);
-    this.bindTex(copy, "u_src", 0, input);
+    const blit = this.programs.get("copy_flip")!;
+    gl.useProgram(blit);
+    this.bindTex(blit, "u_src", 0, input);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
   }
 
