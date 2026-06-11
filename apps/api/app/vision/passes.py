@@ -73,7 +73,8 @@ def create_pass(project_id: str, asset_id: str, pass_type: str, name: str,
     return pid
 
 
-def finish_pass(pass_id: str, data_key: str, frame_start: int, frame_end: int, summary: dict):
+def finish_pass(pass_id: str, data_key: str, frame_start: int, frame_end: int,
+                summary: dict, provider_version: str | None = None):
     with SessionLocal() as db:
         vp = db.get(VisionPass, pass_id)
         vp.status = "ready"
@@ -81,6 +82,8 @@ def finish_pass(pass_id: str, data_key: str, frame_start: int, frame_end: int, s
         vp.frame_start = frame_start
         vp.frame_end = frame_end
         vp.summary = json.dumps(summary)
+        if provider_version:
+            vp.provider_version = provider_version
         db.commit()
 
 

@@ -5,7 +5,7 @@ import numpy as np
 from .. import media, storage
 from ..db import Asset, SessionLocal
 from ..jobs import handler
-from . import adapter, passes, providers
+from . import adapter, passes, providers, providers_real
 
 
 def _get_asset(asset_id: str) -> Asset:
@@ -25,6 +25,71 @@ def _frames(asset: Asset):
         yield from media.iter_video_frames(storage.path_for(asset.proxy_key))
 
 
+def _segment_real(ctx, asset, prompt, pass_id, writer):
+    """SAM 2.1 segmentation. Text prompts route through Grounding DINO first."""
+    size = (asset.proxy_width, asset.proxy_height)
+    frames = [img for _, img in _frames(asset)]
+    total = len(frames)
+
+    if prompt.get("type") == "text":
+        threshold = float(prompt.get("threshold", 0.35))
+        ctx.update(0.02, "grounding prompt")
+        boxes, scores, labels = providers_real.dino_detect(frames[0], prompt["text"], threshold)
+        if len(boxes) == 0:
+            raise ValueError(f"nothing matching '{prompt['text']}' found in frame 0")
+        order = np.argsort(-scores)[:4]  # up to 4 strongest objects
+        sam_prompts = []
+        for i in order:
+            x1, y1, x2, y2 = (float(v) for v in boxes[i])
+            sam_prompts.append({"type": "box",
+                                "box": [x1 / size[0], y1 / size[1],
+                                        (x2 - x1) / size[0], (y2 - y1) / size[1]]})
+        provider_version = f"{providers_real.versions()['sam2']} + grounding-dino"
+    else:
+        sam_prompts = [prompt]
+        provider_version = providers_real.versions()["sam2"]
+
+    frames_meta = []
+    prev_mask = None
+    if asset.type == "image":
+        mask, score = providers_real.sam2_image_mask(frames[0], sam_prompts[0])
+        results = [(0, mask, score)]
+    else:
+        results = providers_real.sam2_video_masks(frames, sam_prompts)
+
+    last = 0
+    for idx, mask, _score in results:
+        if ctx.cancelled:
+            passes.fail_pass(pass_id, "cancelled")
+            return None
+        writer.write_mask_frame(idx, mask)
+        conf = providers.mask_iou(prev_mask, mask) if prev_mask is not None else 0.95
+        prev_mask = mask
+        bbox = providers.mask_bbox(mask)
+        nb = None
+        if bbox:
+            x, y, w, h = bbox
+            nb = [round(x / size[0], 4), round(y / size[1], 4),
+                  round(w / size[0], 4), round(h / size[1], 4)]
+        frames_meta.append({"frame": idx, "bbox": nb, "confidence": round(conf, 4),
+                            "area": round(float((mask > 0).mean()), 4)})
+        last = idx
+        if idx % 10 == 0:
+            ctx.update(0.05 + (idx / total) * 0.9, f"sam2 frame {idx}/{total}")
+
+    mean_conf = float(np.mean([f["confidence"] for f in frames_meta]))
+    data_key = writer.finalize({
+        "type": "mask", "assetId": asset.id,
+        "provider": "segmentation", "providerVersion": provider_version,
+        "width": size[0], "height": size[1],
+        "prompt": prompt, "frames": frames_meta,
+    })
+    passes.finish_pass(pass_id, data_key, 0, last,
+                       {"meanConfidence": round(mean_conf, 3), "frames": len(frames_meta),
+                        "objects": len(sam_prompts)}, provider_version)
+    return {"passId": pass_id}
+
+
 @handler("vision.segment")
 def run_segment(ctx):
     p = ctx.params
@@ -33,6 +98,11 @@ def run_segment(ctx):
     pass_id = p["passId"]
     writer = passes.PassWriter(pass_id)
     try:
+        if providers_real.available():
+            return _segment_real(ctx, asset, prompt, pass_id, writer)
+        if prompt.get("type") == "text":
+            raise ValueError("text-prompted segmentation needs the GPU providers "
+                             "(CUDA not available) — use click or box prompts")
         frames_meta = []
         tracker = None
         total = asset.frame_count or 1
@@ -89,6 +159,7 @@ def run_detect(ctx):
         size = (asset.proxy_width, asset.proxy_height)
         total = asset.frame_count or 1
         tracker = adapter.make_tracker() if asset.type == "video" else None
+        use_real = providers_real.available()
         det_frames = []
         tracks: dict[str, dict] = {}
         last = 0
@@ -96,7 +167,12 @@ def run_detect(ctx):
             if ctx.cancelled:
                 passes.fail_pass(det_pass_id, "cancelled")
                 return None
-            det = providers.stub_detect(frame, prompt_text, threshold, seed, idx)
+            if use_real:
+                boxes, scores, labels = providers_real.dino_detect(frame, prompt_text, threshold)
+                det = adapter.to_detections(boxes, scores, labels)
+                det = adapter.filter_detections(det, min_confidence=threshold)
+            else:
+                det = providers.stub_detect(frame, prompt_text, threshold, seed, idx)
             if tracker is not None:
                 det = tracker.update_with_detections(det)
             items = adapter.detections_to_schema(det, idx, size)
@@ -112,13 +188,17 @@ def run_detect(ctx):
                 ctx.update(idx / total, f"detecting frame {idx}/{total}")
         det_key = det_writer.finalize({
             "type": "detection", "assetId": asset.id,
-            "provider": "detection", "providerVersion": providers.DETECTOR_VERSION,
+            "provider": "detection",
+            "providerVersion": (providers_real.versions()["dino"] if use_real
+                                else providers.DETECTOR_VERSION),
             "width": size[0], "height": size[1],
             "prompt": {"text": prompt_text, "threshold": threshold}, "frames": det_frames,
         })
         n_det = sum(len(f["detections"]) for f in det_frames)
         passes.finish_pass(det_pass_id, det_key, 0, last,
-                           {"detections": n_det, "frames": len(det_frames)})
+                           {"detections": n_det, "frames": len(det_frames)},
+                           providers_real.versions()["dino"] if use_real
+                           else providers.DETECTOR_VERSION)
         result = {"passId": det_pass_id}
         if track_pass_id and tracks:
             tw = passes.PassWriter(track_pass_id)

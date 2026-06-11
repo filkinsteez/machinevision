@@ -16,6 +16,7 @@ export function PassesPanel() {
   const promptBox = useStore((s) => s.promptBox);
   const clearPrompt = useStore((s) => s.clearPrompt);
   const runSegment = useStore((s) => s.runSegment);
+  const runSegmentText = useStore((s) => s.runSegmentText);
   const runDetect = useStore((s) => s.runDetect);
   const runLandmarks = useStore((s) => s.runLandmarks);
   const runFlow = useStore((s) => s.runFlow);
@@ -54,10 +55,13 @@ export function PassesPanel() {
             <input
               value={detectPrompt}
               onChange={(e) => setDetectPrompt(e.target.value)}
-              placeholder="all televisions…"
-              onKeyDown={(e) => e.key === "Enter" && runDetect(detectPrompt, 0.5)}
+              placeholder="bird, red jacket, all faces…"
+              onKeyDown={(e) => e.key === "Enter" && runDetect(detectPrompt, 0.35)}
             />
-            <button className="go" onClick={() => runDetect(detectPrompt, 0.5)}>DETECT</button>
+            <button className="go" title="open-vocab detection boxes"
+                    onClick={() => runDetect(detectPrompt, 0.35)}>DETECT</button>
+            <button className="go" title="text-prompted segmentation mask"
+                    onClick={() => runSegmentText(detectPrompt)}>MASK</button>
           </div>
           <div className="seg-tools wrap">
             <button onClick={() => runLandmarks("face")}>FACE</button>

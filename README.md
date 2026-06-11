@@ -40,9 +40,15 @@ cd apps/api
 ## What works (Phase 1–6 vertical slice, stub providers)
 
 - Upload image/video → PyAV ingest, proxy, thumbnail (no external FFmpeg needed)
-- Click/box prompt segmentation (GrabCut + CSRT tracking — the SAM 2.1 slot), open-vocab
-  detection stub with ByteTrack tracking via Supervision, MediaPipe face/pose/hand
-  landmarks (real), Farneback optical flow (real), derived edge mattes
+- **Real GPU providers when CUDA is available**: SAM 2.1 segmentation with native video
+  masklet propagation (click/box/text prompts) and Grounding DINO open-vocabulary
+  detection ("bird" finds birds), via HuggingFace transformers. Without CUDA the stub
+  roster (GrabCut + CSRT, saliency detector) takes over automatically. MediaPipe
+  face/pose/hand landmarks, Farneback optical flow, ByteTrack tracking via
+  Supervision, derived edge mattes — all real on CPU.
+  GPU extras: `uv pip install torch torchvision --index-url
+  https://download.pytorch.org/whl/cu126` then `uv pip install transformers`
+  (models download from HF Hub on first use, ~1.5 GB)
 - WebGL2 preview compositor: matte view, mask edge decay, ASCII shader, CPU pixel sort,
   flow smear, datamosh preview (flow-displaced feedback), object labels, landmark
   overlays, metadata typography

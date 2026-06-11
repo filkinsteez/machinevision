@@ -35,6 +35,7 @@ interface State {
   clearPrompt: () => void;
   setPromptBox: (b: [number, number, number, number] | null) => void;
   runSegment: () => Promise<void>;
+  runSegmentText: (prompt: string) => Promise<void>;
   runDetect: (prompt: string, threshold: number) => Promise<void>;
   runLandmarks: (kind: string) => Promise<void>;
   runFlow: () => Promise<void>;
@@ -167,6 +168,15 @@ export const useStore = create<State>((set, get) => ({
     try {
       await api.segment(project.id, selectedAssetId, prompt);
       set({ promptPoints: [], promptBox: null, tool: "select" });
+      await get().refresh();
+    } catch (e) { set({ error: String(e) }); }
+  },
+
+  runSegmentText: async (prompt) => {
+    const { project, selectedAssetId } = get();
+    if (!project || !selectedAssetId || !prompt.trim()) return;
+    try {
+      await api.segment(project.id, selectedAssetId, { type: "text", text: prompt.trim() });
       await get().refresh();
     } catch (e) { set({ error: String(e) }); }
   },

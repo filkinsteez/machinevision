@@ -1,3 +1,5 @@
+import threading
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -14,6 +16,22 @@ from .render import datamosh  # noqa: F401
 
 init_db()
 seed_presets()
+
+
+def _warm_models():
+    """Load GPU models in the background so the first prompt isn't slow."""
+    try:
+        from .vision import providers_real
+        if providers_real.available():
+            providers_real._get_dino()
+            providers_real._get_sam2_video()
+            providers_real._get_sam2_image()
+            print("[machine-vision] GPU providers warmed:", providers_real.versions())
+    except Exception as exc:
+        print(f"[machine-vision] GPU providers unavailable ({exc}); stub roster active")
+
+
+threading.Thread(target=_warm_models, daemon=True).start()
 
 app = FastAPI(title="Machine Vision API", version="0.2")
 
