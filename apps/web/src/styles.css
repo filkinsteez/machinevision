@@ -124,10 +124,18 @@ input[type="number"].seed { width: 72px; }
 /* layers */
 .layer-list li {
   display: flex; gap: 4px; align-items: center; padding: 4px;
-  border: 1px solid transparent; cursor: pointer; border-radius: 2px;
+  border: 1px solid transparent; cursor: grab; border-radius: 2px;
 }
 .layer-list li:hover { border-color: var(--line); }
 .layer-list li.sel { border-color: var(--orange); }
+.layer-list li.dragging { opacity: 0.35; cursor: grabbing; }
+.layer-list li.drop-target { border-top: 2px solid var(--orange); }
+.layer-list .grip { color: var(--dim); font-size: 11px; cursor: grab; user-select: none; }
+.layer-list li.drop-end {
+  border: 1px dashed var(--line); color: var(--dim);
+  justify-content: center; font-size: 9px; letter-spacing: 0.12em; padding: 6px;
+}
+.layer-list li.drop-end.drop-target { border-color: var(--orange); color: var(--orange); }
 .layer-list .eye { border: none; background: none; font-size: 12px; color: var(--dim); }
 .layer-list .eye.on { color: var(--green); }
 .layer-list .name { font-size: 11px; }

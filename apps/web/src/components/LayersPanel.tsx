@@ -10,12 +10,16 @@ export function LayersPanel() {
   const selected = useStore((s) => s.selectedLayerId);
   const selectLayer = useStore((s) => s.selectLayer);
   const [adding, setAdding] = useState(false);
+  const [dragIdx, setDragIdx] = useState<number | null>(null);
+  const [overIdx, setOverIdx] = useState<number | null>(null);
 
-  const move = (i: number, dir: number) => {
+  const drop = (e: React.DragEvent, target: number) => {
+    const id = e.dataTransfer.getData("text/plain");
+    const from = layers.findIndex((l) => l.id === id);
+    if (from < 0 || from === target) return;
     const next = [...layers];
-    const j = i + dir;
-    if (j < 0 || j >= next.length) return;
-    [next[i], next[j]] = [next[j], next[i]];
+    const [moved] = next.splice(from, 1);
+    next.splice(target > from ? target - 1 : target, 0, moved);
     setLayers(next);
   };
 
@@ -42,26 +46,51 @@ export function LayersPanel() {
       )}
       <ul className="layer-list">
         {layers.map((l, i) => (
-          <li key={l.id} className={l.id === selected ? "sel" : ""} onClick={() => selectLayer(l.id)}>
+          <li
+            key={l.id}
+            draggable
+            className={[
+              l.id === selected ? "sel" : "",
+              dragIdx === i ? "dragging" : "",
+              overIdx === i && dragIdx !== null && dragIdx !== i ? "drop-target" : "",
+            ].join(" ")}
+            onClick={() => selectLayer(l.id)}
+            onDragStart={(e) => {
+              setDragIdx(i);
+              e.dataTransfer.effectAllowed = "move";
+              e.dataTransfer.setData("text/plain", l.id);
+            }}
+            onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; setOverIdx(i); }}
+            onDragLeave={() => setOverIdx((o) => (o === i ? null : o))}
+            onDrop={(e) => { e.preventDefault(); drop(e, i); setDragIdx(null); setOverIdx(null); }}
+            onDragEnd={() => { setDragIdx(null); setOverIdx(null); }}
+          >
+            <span className="grip" title="drag to reorder">⠿</span>
             <button
               className={`eye ${l.enabled ? "on" : ""}`}
               onClick={(e) => { e.stopPropagation(); updateLayer(l.id, { enabled: !l.enabled }); }}
             >{l.enabled ? "◉" : "○"}</button>
             <span className="grow name">{l.name}</span>
-            <button onClick={(e) => { e.stopPropagation(); move(i, -1); }}>↑</button>
-            <button onClick={(e) => { e.stopPropagation(); move(i, 1); }}>↓</button>
-            <button onClick={(e) => {
+            <button title="duplicate" onClick={(e) => {
               e.stopPropagation();
               const copy = { ...l, id: uniqueId(), name: l.name + " copy" };
               setLayers([...layers.slice(0, i + 1), copy, ...layers.slice(i + 1)]);
             }}>⧉</button>
-            <button onClick={(e) => {
+            <button title="delete" onClick={(e) => {
               e.stopPropagation();
               setLayers(layers.filter((x) => x.id !== l.id));
               if (selected === l.id) selectLayer(null);
             }}>✕</button>
           </li>
         ))}
+        {/* drop zone for moving a layer to the end */}
+        {dragIdx !== null && (
+          <li
+            className={`drop-end ${overIdx === layers.length ? "drop-target" : ""}`}
+            onDragOver={(e) => { e.preventDefault(); setOverIdx(layers.length); }}
+            onDrop={(e) => { e.preventDefault(); drop(e, layers.length); setDragIdx(null); setOverIdx(null); }}
+          >⌄ move to end</li>
+        )}
         {!layers.length && <li className="dim empty">no layers — add one or apply a preset</li>}
       </ul>
     </section>

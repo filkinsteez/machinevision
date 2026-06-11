@@ -119,11 +119,15 @@ export const LAYER_DEFS: LayerDef[] = [
     sources: [{ key: "detection", passTypes: ["detection"], required: true }],
     params: {
       boxStyle: { kind: "select", options: ["brackets", "box", "none"], default: "brackets", label: "Box Style" },
+      lineWidth: { kind: "slider", min: 0.5, max: 6, step: 0.5, default: 1, label: "Stroke Width" },
+      color: { kind: "color", default: "#FF5A00", label: "Box Color" },
+      showLabel: { kind: "toggle", default: true, label: "Class Label" },
       showConfidence: { kind: "toggle", default: true, label: "Confidence" },
       showTrackId: { kind: "toggle", default: true, label: "Track ID" },
+      labelColor: { kind: "color", default: "#FF5A00", label: "Label Color" },
+      fontSize: { kind: "slider", min: 7, max: 22, step: 1, default: 10, label: "Font Size" },
+      labelBackground: { kind: "toggle", default: false, label: "Label Backing" },
       threshold: { kind: "slider", min: 0, max: 1, step: 0.01, default: 0.5, label: "Min Confidence" },
-      fontSize: { kind: "slider", min: 7, max: 18, step: 1, default: 10, label: "Font Size" },
-      color: { kind: "color", default: "#FF5A00", label: "Color" },
     },
   },
   {

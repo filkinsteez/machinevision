@@ -38,13 +38,15 @@ function drawLabels(ctx: CanvasRenderingContext2D, layer: RenderLayer,
   if (!entry?.detections) return;
   const p = layer.params;
   const color = String(p.color ?? "#FF5A00");
+  const labelColor = String(p.labelColor ?? color);
   const fontSize = Number(p.fontSize ?? 10);
+  const lineWidth = Number(p.lineWidth ?? 1);
   const threshold = Number(p.threshold ?? 0.5);
   const boxStyle = String(p.boxStyle ?? "brackets");
+  const showLabel = p.showLabel !== false;
   ctx.globalAlpha = layer.blend.opacity;
   ctx.strokeStyle = color;
-  ctx.fillStyle = color;
-  ctx.lineWidth = 1;
+  ctx.lineWidth = lineWidth;
   ctx.font = `${fontSize}px Consolas, monospace`;
   for (const d of entry.detections) {
     if ((d.confidence ?? 1) < threshold) continue;
@@ -61,10 +63,20 @@ function drawLabels(ctx: CanvasRenderingContext2D, layer: RenderLayer,
       ctx.moveTo(x + s, y + bh); ctx.lineTo(x, y + bh); ctx.lineTo(x, y + bh - s);
       ctx.stroke();
     }
-    const bits = [d.label];
+    const bits: string[] = [];
+    if (showLabel) bits.push(d.label);
     if (p.showTrackId && d.trackId) bits.push(d.trackId.replace("track_", "#"));
     if (p.showConfidence && d.confidence != null) bits.push(d.confidence.toFixed(2));
-    ctx.fillText(bits.join(" "), x, y - 3);
+    if (bits.length) {
+      const text = bits.join(" ");
+      if (p.labelBackground) {
+        const tw = ctx.measureText(text).width;
+        ctx.fillStyle = "rgba(0,0,0,0.75)";
+        ctx.fillRect(x - 1, y - fontSize - 5, tw + 4, fontSize + 4);
+      }
+      ctx.fillStyle = labelColor;
+      ctx.fillText(text, x + 1, y - 4);
+    }
   }
   ctx.globalAlpha = 1;
 }
