@@ -1,0 +1,199 @@
+/** Fragment shaders for GL render layers. Shared contract:
+ *  u_src   = chain input (previous layer output)
+ *  u_orig  = untouched source frame
+ *  u_mask  = routed mask/edge texture (R channel)
+ *  u_flow  = packed flow (RG = uv*0.5+0.5, scaled by u_flowScale px)
+ *  u_prev  = layer's own feedback buffer (stateful layers)
+ *  u_opacity / u_blend apply the layer onto the chain inside each shader.
+ */
+
+const COMMON = `#version 300 es
+precision highp float;
+in vec2 v_uv;
+out vec4 frag;
+uniform sampler2D u_src;
+uniform sampler2D u_orig;
+uniform sampler2D u_mask;
+uniform vec2 u_res;
+uniform float u_frame;
+uniform float u_seed;
+uniform float u_opacity;
+uniform int u_blend;
+uniform int u_hasMask;
+
+float hash(vec3 p) {
+  p = fract(p * 0.3183099 + vec3(0.1, 0.2, 0.3));
+  p *= 17.0;
+  return fract(p.x * p.y * p.z * (p.x + p.y + p.z));
+}
+float maskAt(vec2 uv) { return u_hasMask == 1 ? texture(u_mask, uv).r : 1.0; }
+vec3 applyBlend(vec3 base, vec3 fx) {
+  if (u_blend == 1) return min(base + fx, 1.0);            // add
+  if (u_blend == 2) return 1.0 - (1.0 - base) * (1.0 - fx); // screen
+  if (u_blend == 3) return base * fx;                       // multiply
+  return fx;                                                // normal
+}
+vec4 composite(vec3 base, vec3 fx, float w) {
+  return vec4(mix(base, applyBlend(base, fx), clamp(w, 0.0, 1.0) * u_opacity), 1.0);
+}
+`;
+
+export const SHADERS: Record<string, string> = {
+  copy: COMMON + `
+void main() { frag = texture(u_src, v_uv); }`,
+
+  matte_view: COMMON + `
+uniform vec3 u_color;
+uniform float u_amount;
+uniform int u_mode;   // 0 tint, 1 matte, 2 cutout
+uniform int u_invert;
+void main() {
+  vec3 src = texture(u_src, v_uv).rgb;
+  float m = maskAt(v_uv);
+  if (u_invert == 1) m = 1.0 - m;
+  vec3 fx;
+  if (u_mode == 1) fx = vec3(m);
+  else if (u_mode == 2) fx = src * m;
+  else fx = mix(src, u_color, m * u_amount);
+  frag = composite(src, fx, 1.0);
+}`,
+
+  mask_edge_decay: COMMON + `
+uniform vec3 u_color;
+uniform float u_edgeWidth;
+uniform float u_jitter;
+uniform int u_mode;  // 0 halo, 1 rot, 2 holes
+float edgeBand(vec2 uv, float w) {
+  float c = maskAt(uv);
+  float mn = c, mx = c;
+  for (int i = 0; i < 8; i++) {
+    float a = 6.2831 * float(i) / 8.0;
+    float s = maskAt(uv + vec2(cos(a), sin(a)) * w);
+    mn = min(mn, s); mx = max(mx, s);
+  }
+  return mx - mn;
+}
+void main() {
+  vec3 src = texture(u_src, v_uv).rgb;
+  vec2 juv = v_uv + (vec2(hash(vec3(v_uv * 31.0, u_seed + u_frame)),
+                          hash(vec3(v_uv * 47.0, u_seed + u_frame + 9.0))) - 0.5)
+                    * u_jitter * u_edgeWidth * 2.0;
+  float e = edgeBand(juv, u_edgeWidth);
+  vec3 fx;
+  if (u_mode == 1) { // rot: displace source inside the band
+    vec2 d = (vec2(hash(vec3(floor(v_uv * u_res / 6.0), u_seed + u_frame)),
+                   hash(vec3(floor(v_uv * u_res / 6.0), u_seed + u_frame + 3.0))) - 0.5)
+             * e * u_edgeWidth * 14.0;
+    fx = mix(src, texture(u_orig, v_uv + d).rgb + u_color * e * 0.25, e);
+  } else if (u_mode == 2) { // holes
+    float h = step(0.55, hash(vec3(floor(v_uv * u_res / 4.0), u_seed + floor(u_frame / 2.0))));
+    fx = mix(src, vec3(0.0), e * h);
+  } else {
+    fx = src + u_color * e;
+  }
+  frag = composite(src, fx, 1.0);
+}`,
+
+  ascii_shader: COMMON + `
+uniform sampler2D u_atlas;
+uniform float u_cellSize;
+uniform float u_nGlyphs;
+uniform int u_region;     // 0 all, 1 inside, 2 outside
+uniform int u_colorMode;  // 0 mono, 1 source
+uniform vec3 u_color;
+uniform float u_contrast;
+uniform float u_flicker;
+void main() {
+  vec3 src = texture(u_src, v_uv).rgb;
+  vec2 cells = u_res / u_cellSize;
+  vec2 cellId = floor(v_uv * cells);
+  vec2 cellUV = (cellId + 0.5) / cells;
+  vec3 c = texture(u_src, cellUV).rgb;
+  float luma = clamp(dot(c, vec3(0.299, 0.587, 0.114)) * u_contrast, 0.0, 1.0);
+  luma += (hash(vec3(cellId, u_seed + u_frame)) - 0.5) * u_flicker * 2.0;
+  float gi = clamp(floor(luma * u_nGlyphs), 0.0, u_nGlyphs - 1.0);
+  vec2 inCell = fract(v_uv * cells);
+  float g = texture(u_atlas, vec2((gi + inCell.x) / u_nGlyphs, inCell.y)).r;
+  vec3 glyphCol = u_colorMode == 1 ? c * 1.4 : u_color;
+  vec3 ascii = glyphCol * g;
+  float m = maskAt(v_uv);
+  float region = u_region == 0 ? 1.0 : (u_region == 1 ? m : 1.0 - m);
+  frag = composite(src, mix(src, ascii, region), 1.0);
+}`,
+
+  pixel_sort: COMMON + `
+uniform sampler2D u_sorted;
+uniform int u_hasSorted;
+void main() {
+  vec3 src = texture(u_src, v_uv).rgb;
+  if (u_hasSorted == 0) { frag = vec4(src, 1.0); return; }
+  vec3 fx = texture(u_sorted, v_uv).rgb;
+  frag = composite(src, fx, 1.0);
+}`,
+
+  flow_smear: COMMON + `
+uniform sampler2D u_flow;
+uniform sampler2D u_prev;
+uniform float u_flowScale;
+uniform float u_strength;
+uniform float u_decay;
+uniform int u_region;
+void main() {
+  vec3 src = texture(u_src, v_uv).rgb;
+  vec2 f = (texture(u_flow, v_uv).rg * 2.0 - 1.0) * u_flowScale;
+  vec2 disp = f * u_strength / u_res;
+  vec3 prev = texture(u_prev, clamp(v_uv - disp, 0.0, 1.0)).rgb;
+  float m = maskAt(v_uv);
+  float region = u_region == 0 ? 1.0 : (u_region == 1 ? m : 1.0 - m);
+  vec3 fx = mix(src, prev, u_decay * region);
+  frag = composite(src, fx, 1.0);
+}`,
+
+  datamosh_preview: COMMON + `
+uniform sampler2D u_flow;
+uniform sampler2D u_prev;
+uniform float u_flowScale;
+uniform float u_strength;
+uniform float u_decay;
+uniform float u_blockSize;
+uniform float u_edgeLeak;
+uniform int u_mode; // 0 subject, 1 background
+void main() {
+  vec3 src = texture(u_src, v_uv).rgb;
+  vec2 blockUV = (floor(v_uv * u_res / u_blockSize) * u_blockSize + u_blockSize * 0.5) / u_res;
+  vec2 f = (texture(u_flow, blockUV).rg * 2.0 - 1.0) * u_flowScale;
+  f += (vec2(hash(vec3(blockUV, u_seed + u_frame)),
+             hash(vec3(blockUV, u_seed + u_frame + 5.0))) - 0.5) * 1.5;
+  vec2 disp = f / u_res;
+  vec3 prev = texture(u_prev, clamp(v_uv - disp, 0.0, 1.0)).rgb;
+  float m = maskAt(v_uv);
+  // edge leak: widen the region by sampling a blurred neighborhood
+  float leak = 0.0;
+  for (int i = 0; i < 4; i++) {
+    float a = 6.2831 * float(i) / 4.0;
+    leak = max(leak, maskAt(v_uv + vec2(cos(a), sin(a)) * u_edgeLeak * 0.04));
+  }
+  m = max(m, leak * 0.6);
+  if (u_mode == 1) m = 1.0 - m;
+  vec3 fx = mix(src, prev, u_decay * m * u_strength);
+  frag = composite(src, fx, 1.0);
+}`,
+};
+
+/** Build the glyph atlas for the ASCII shader: density ramp, 1 row. */
+export function buildGlyphAtlas(): { canvas: HTMLCanvasElement; nGlyphs: number } {
+  const glyphs = " .:-=+*#%@".split("");
+  const cell = 32;
+  const canvas = document.createElement("canvas");
+  canvas.width = cell * glyphs.length;
+  canvas.height = cell;
+  const ctx = canvas.getContext("2d")!;
+  ctx.fillStyle = "#000";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = "#fff";
+  ctx.font = `${cell * 0.8}px "Consolas", monospace`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  glyphs.forEach((g, i) => ctx.fillText(g, i * cell + cell / 2, cell / 2 + 1));
+  return { canvas, nGlyphs: glyphs.length };
+}

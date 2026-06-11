@@ -9,6 +9,48 @@ A hybrid creative web app for turning computer vision analysis into rendered vis
 - [PRD.md](PRD.md) — full product requirements (v0.2)
 - [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) — architecture decisions, resolved open questions, phased build plan
 
-## Status
+## Running it (local dev mode)
 
-Planning. Next step: Phase 0 spikes (PyAV datamosh, WebGL2 masked feedback) per the implementation plan.
+Backend (FastAPI + SQLite + local storage — Python 3.12 via uv):
+
+```powershell
+cd apps/api
+uv venv --python 3.12 .venv
+uv pip install --python .venv\Scripts\python.exe -r requirements.txt
+uv pip install --python .venv\Scripts\python.exe --force-reinstall opencv-contrib-python
+.\.venv\Scripts\python.exe -m uvicorn app.main:app --port 8000
+```
+
+Frontend (Vite + React + WebGL2):
+
+```powershell
+cd apps/web
+npm install
+npm run dev    # http://localhost:5173
+```
+
+Smoke test (full vertical slice, no browser needed):
+
+```powershell
+cd apps/api
+.\.venv\Scripts\python.exe scripts\make_test_clip.py
+.\.venv\Scripts\python.exe scripts\smoke_test.py
+```
+
+## What works (Phase 1–6 vertical slice, stub providers)
+
+- Upload image/video → PyAV ingest, proxy, thumbnail (no external FFmpeg needed)
+- Click/box prompt segmentation (GrabCut + CSRT tracking — the SAM 2.1 slot), open-vocab
+  detection stub with ByteTrack tracking via Supervision, MediaPipe face/pose/hand
+  landmarks (real), Farneback optical flow (real), derived edge mattes
+- WebGL2 preview compositor: matte view, mask edge decay, ASCII shader, CPU pixel sort,
+  flow smear, datamosh preview (flow-displaced feedback), object labels, landmark
+  overlays, metadata typography
+- **Authentic codec datamosh**: server-side MPEG-4 packet surgery (I-frame drops,
+  P-frame duplication) composited through the mask — subject / background modes
+- Exports: baked MP4 (codec engine), frame-accurate browser bake, datamosh pass,
+  clean pass, mask PNG sequence zips, metadata JSON, project JSON
+- Starter presets with required-pass gating, custom preset save
+
+Local dev mode = SQLite + threaded jobs + disk storage behind the production
+interfaces (Postgres/Celery/S3 swap points per IMPLEMENTATION_PLAN AD-4/AD-11).

@@ -1,0 +1,39 @@
+import { useStore } from "../store";
+import { previewController } from "./PreviewCanvas";
+
+export function Timeline() {
+  const asset = useStore((s) => s.assets.find((a) => a.id === s.selectedAssetId) ?? null);
+  const frame = useStore((s) => s.currentFrame);
+  const playing = useStore((s) => s.playing);
+  if (!asset || asset.status !== "ready") return <div className="timeline" />;
+  const frameCount = asset.frameCount ?? 1;
+  const isVideo = asset.type === "video";
+
+  return (
+    <div className="timeline">
+      <div className="transport">
+        <button onClick={() => previewController.seek(Math.max(frame - 1, 0))} title="step back">₀</button>
+        <button
+          className="play"
+          onClick={() => (playing ? previewController.pause() : previewController.play())}
+          disabled={!isVideo}
+        >
+          {playing ? "PAUSE" : "PLAY"}
+        </button>
+        <button onClick={() => previewController.seek(Math.min(frame + 1, frameCount - 1))} title="step forward">₁</button>
+      </div>
+      <input
+        type="range"
+        min={0}
+        max={Math.max(frameCount - 1, 0)}
+        value={frame}
+        disabled={!isVideo}
+        onChange={(e) => previewController.seek(Number(e.target.value))}
+      />
+      <div className="frame-readout">
+        {String(frame).padStart(6, "0")} / {String(frameCount - 1).padStart(6, "0")}
+        <span className="dim"> {asset.fps ? `${asset.fps.toFixed(2)}fps` : ""}</span>
+      </div>
+    </div>
+  );
+}
