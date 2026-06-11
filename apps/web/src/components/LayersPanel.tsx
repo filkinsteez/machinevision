@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useShallow } from "zustand/react/shallow";
-import { LAYER_DEFS, newLayer } from "../layers";
+import { LAYER_DEFS, newLayer, uniqueId } from "../layers";
 import { useStore } from "../store";
 
 export function LayersPanel() {
@@ -52,7 +52,7 @@ export function LayersPanel() {
             <button onClick={(e) => { e.stopPropagation(); move(i, 1); }}>↓</button>
             <button onClick={(e) => {
               e.stopPropagation();
-              const copy = { ...l, id: `layer_${Date.now().toString(36)}_d`, name: l.name + " copy" };
+              const copy = { ...l, id: uniqueId(), name: l.name + " copy" };
               setLayers([...layers.slice(0, i + 1), copy, ...layers.slice(i + 1)]);
             }}>⧉</button>
             <button onClick={(e) => {

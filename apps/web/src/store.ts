@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { uniqueId } from "./layers";
 import { api } from "./api";
 import type { Asset, ExportRecord, Job, Preset, Project, PromptPoint, RenderLayer, VisionPass } from "./types";
 
@@ -204,9 +205,9 @@ export const useStore = create<State>((set, get) => ({
       const found = ready.find((p) => p.type === wanted);
       return found ? found.id : null;
     };
-    const newLayers: RenderLayer[] = preset.renderLayers.map((l, i) => ({
+    const newLayers: RenderLayer[] = preset.renderLayers.map((l) => ({
       ...l,
-      id: `layer_${Date.now().toString(36)}_${i}`,
+      id: uniqueId(),
       enabled: l.enabled ?? true,
       blend: l.blend ?? { mode: "normal", opacity: 1.0 },
       sources: Object.fromEntries(Object.entries(l.sources).map(([k, v]) => [k, resolve(v)])),

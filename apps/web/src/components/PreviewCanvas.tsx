@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Compositor } from "../render/compositor";
 import { drawOverlays } from "../render/overlay";
 import { bakeExport } from "../render/bake";
@@ -54,7 +54,21 @@ export function PreviewCanvas() {
 
   const asset = useStore((s) => s.assets.find((a) => a.id === s.selectedAssetId) ?? null);
   const tool = useStore((s) => s.tool);
+  const [glEpoch, setGlEpoch] = useState(0);
   const assetKey = asset?.status === "ready" ? `${asset.id}` : null;
+
+  // recover from GPU resets: rebuild the whole pipeline on context loss
+  useEffect(() => {
+    const canvas = glRef.current;
+    if (!canvas) return;
+    const onLost = (e: Event) => {
+      e.preventDefault();
+      console.warn("WebGL context lost — rebuilding compositor");
+      setTimeout(() => setGlEpoch((n) => n + 1), 500);
+    };
+    canvas.addEventListener("webglcontextlost", onLost);
+    return () => canvas.removeEventListener("webglcontextlost", onLost);
+  }, [assetKey, glEpoch]);
 
   // (re)build pipeline when the selected ready asset changes
   useEffect(() => {
@@ -85,7 +99,7 @@ export function PreviewCanvas() {
     useStore.getState().setFrame(0);
     useStore.getState().setPlaying(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [assetKey]);
+  }, [assetKey, glEpoch]);
 
   // render loop
   useEffect(() => {
@@ -96,6 +110,7 @@ export function PreviewCanvas() {
       const comp = compRef.current;
       const a = s.assets.find((x) => x.id === s.selectedAssetId);
       if (!comp || !a || a.status !== "ready") return;
+      if (document.hidden || comp.gl.isContextLost()) return;
       const v = videoRef.current;
       const source: TexImageSource | null =
         a.type === "video" ? (v && v.readyState >= 2 ? v : null) : imageRef.current;

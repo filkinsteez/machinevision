@@ -174,11 +174,13 @@ export function defaultParams(def: LayerDef): RenderLayer["params"] {
   return out;
 }
 
-let layerCounter = 0;
+export function uniqueId(): string {
+  return `layer_${crypto.randomUUID().slice(0, 13)}`;
+}
+
 export function newLayer(def: LayerDef): RenderLayer {
-  layerCounter += 1;
   return {
-    id: `layer_${Date.now().toString(36)}_${layerCounter}`,
+    id: uniqueId(),
     type: def.type,
     name: def.label,
     enabled: true,

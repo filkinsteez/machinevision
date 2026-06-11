@@ -3,7 +3,7 @@
 import type { PassData } from "../types";
 
 const jsonCache = new Map<string, PassData | Promise<PassData>>();
-const bitmapCaches = new Map<string, Map<number, ImageBitmap | "loading">>();
+const bitmapCaches = new Map<string, Map<number, ImageBitmap | "loading" | "failed">>();
 const LRU_LIMIT = 48;
 
 export function getPassJSON(passId: string): PassData | null {
@@ -30,7 +30,8 @@ function cacheFor(key: string) {
   return c;
 }
 
-function fetchBitmap(cache: Map<number, ImageBitmap | "loading">, url: string, frame: number) {
+function fetchBitmap(cache: Map<number, ImageBitmap | "loading" | "failed">,
+                     url: string, frame: number) {
   cache.set(frame, "loading");
   fetch(url)
     .then((r) => (r.ok ? r.blob() : Promise.reject(r.status)))
@@ -40,14 +41,15 @@ function fetchBitmap(cache: Map<number, ImageBitmap | "loading">, url: string, f
       if (cache.size > LRU_LIMIT) {
         for (const [k, v] of cache) {
           if (cache.size <= LRU_LIMIT) break;
-          if (k !== frame) {
+          if (k !== frame && v !== "loading") {
             if (v instanceof ImageBitmap) v.close();
             cache.delete(k);
           }
         }
       }
     })
-    .catch(() => cache.delete(frame));
+    // mark failed instead of deleting — deleting would refetch every frame (404 storm)
+    .catch(() => cache.set(frame, "failed"));
 }
 
 /** Returns the bitmap for `frame` if loaded; otherwise kicks off a fetch and
