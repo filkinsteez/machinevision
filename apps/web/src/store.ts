@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { uniqueId } from "./layers";
+import { layerDef, newLayer, uniqueId } from "./layers";
 import { api } from "./api";
 import type { Asset, ExportRecord, Job, Preset, Project, PromptPoint, RenderLayer, VisionPass } from "./types";
 
@@ -42,6 +42,7 @@ interface State {
   runEdgeMatte: (maskPassId: string) => Promise<void>;
   deletePass: (id: string) => Promise<void>;
   setVisiblePass: (id: string | null) => void;
+  addLayerForPass: (pass: VisionPass) => void;
 
   layers: () => RenderLayer[];
   setLayers: (layers: RenderLayer[]) => void;
@@ -225,6 +226,28 @@ export const useStore = create<State>((set, get) => ({
   },
 
   setVisiblePass: (visiblePassId) => set({ visiblePassId }),
+
+  // one-click: pass -> styled render layer with routing prefilled, controls open
+  addLayerForPass: (pass) => {
+    const typeFor: Record<string, string> = {
+      detection: "object_labels",
+      mask: "matte_view",
+      edge_matte: "mask_edge_decay",
+      optical_flow: "flow_smear",
+      face_landmarks: "landmark_overlay",
+      pose_landmarks: "landmark_overlay",
+      hand_landmarks: "landmark_overlay",
+    };
+    const def = layerDef(typeFor[pass.type] ?? "");
+    if (!def) return;
+    const layer = newLayer(def);
+    layer.name = `${def.label}: ${pass.name}`;
+    for (const src of def.sources) {
+      if (src.passTypes.includes(pass.type)) layer.sources[src.key] = pass.id;
+    }
+    get().setLayers([...get().layers(), layer]);
+    set({ selectedLayerId: layer.id, visiblePassId: null });
+  },
 
   layers: () => get().project?.renderLayers ?? [],
 

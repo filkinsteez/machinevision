@@ -24,6 +24,7 @@ export function PassesPanel() {
   const deletePass = useStore((s) => s.deletePass);
   const visiblePassId = useStore((s) => s.visiblePassId);
   const setVisiblePass = useStore((s) => s.setVisiblePass);
+  const addLayerForPass = useStore((s) => s.addLayerForPass);
   const [detectPrompt, setDetectPrompt] = useState("the subject");
 
   const ready = asset?.status === "ready";
@@ -86,10 +87,17 @@ export function PassesPanel() {
             {p.status === "ready" && (
               <>
                 <button
-                  title="toggle visibility"
+                  title="quick view (unstyled) — use +LYR for a styleable layer"
                   className={visiblePassId === p.id ? "active" : ""}
                   onClick={() => setVisiblePass(visiblePassId === p.id ? null : p.id)}
                 >◉</button>
+                {p.type !== "tracking" && (
+                  <button
+                    className="go"
+                    title="create a render layer from this pass — all styling lives there"
+                    onClick={() => addLayerForPass(p)}
+                  >+LYR</button>
+                )}
                 {p.type === "mask" && (
                   <button title="derive edge matte" onClick={() => runEdgeMatte(p.id)}>EDG</button>
                 )}
