@@ -1,0 +1,10 @@
+fastapi
+uvicorn[standard]
+sqlalchemy
+pydantic
+python-multipart
+numpy
+av
+supervision
+mediapipe
+opencv-contrib-python

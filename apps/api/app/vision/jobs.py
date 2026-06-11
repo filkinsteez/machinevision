@@ -1,0 +1,279 @@
+"""Vision job handlers: providers in, normalized passes out."""
+import cv2
+import numpy as np
+
+from .. import media, storage
+from ..db import Asset, SessionLocal
+from ..jobs import handler
+from . import adapter, passes, providers
+
+
+def _get_asset(asset_id: str) -> Asset:
+    with SessionLocal() as db:
+        asset = db.get(Asset, asset_id)
+    if asset is None or asset.status != "ready":
+        raise ValueError(f"asset {asset_id} not ready")
+    return asset
+
+
+def _frames(asset: Asset):
+    """Yields (idx, bgr) at proxy resolution; single frame for images."""
+    if asset.type == "image":
+        img = cv2.imread(str(storage.path_for(asset.proxy_key)), cv2.IMREAD_COLOR)
+        yield 0, img
+    else:
+        yield from media.iter_video_frames(storage.path_for(asset.proxy_key))
+
+
+@handler("vision.segment")
+def run_segment(ctx):
+    p = ctx.params
+    asset = _get_asset(p["assetId"])
+    prompt = p["prompt"]
+    pass_id = p["passId"]
+    writer = passes.PassWriter(pass_id)
+    try:
+        frames_meta = []
+        tracker = None
+        total = asset.frame_count or 1
+        size = (asset.proxy_width, asset.proxy_height)
+        last = 0
+        for idx, frame in _frames(asset):
+            if ctx.cancelled:
+                passes.fail_pass(pass_id, "cancelled")
+                return None
+            if idx == 0:
+                mask = providers.grabcut_initial_mask(frame, prompt)
+                conf = 0.9
+                tracker = providers.MaskTracker(frame, mask)
+            else:
+                mask, conf = tracker.step(frame)
+            writer.write_mask_frame(idx, mask)
+            bbox = providers.mask_bbox(mask)
+            nb = None
+            if bbox:
+                x, y, w, h = bbox
+                nb = [round(x / size[0], 4), round(y / size[1], 4),
+                      round(w / size[0], 4), round(h / size[1], 4)]
+            frames_meta.append({"frame": idx, "bbox": nb, "confidence": round(conf, 4),
+                                "area": round(float((mask > 0).mean()), 4)})
+            last = idx
+            if idx % 10 == 0:
+                ctx.update(idx / total, f"segmenting frame {idx}/{total}")
+        mean_conf = float(np.mean([f["confidence"] for f in frames_meta]))
+        data_key = writer.finalize({
+            "type": "mask", "assetId": asset.id,
+            "provider": "segmentation", "providerVersion": providers.GRABCUT_VERSION,
+            "width": size[0], "height": size[1],
+            "prompt": prompt, "frames": frames_meta,
+        })
+        passes.finish_pass(pass_id, data_key, 0, last,
+                           {"meanConfidence": round(mean_conf, 3), "frames": len(frames_meta)})
+        return {"passId": pass_id}
+    except Exception as exc:
+        passes.fail_pass(pass_id, str(exc))
+        raise
+
+
+@handler("vision.detect")
+def run_detect(ctx):
+    p = ctx.params
+    asset = _get_asset(p["assetId"])
+    prompt_text = p.get("prompt", "object")
+    threshold = float(p.get("threshold", 0.5))
+    seed = int(p.get("seed", 1234))
+    det_pass_id = p["passId"]
+    track_pass_id = p.get("trackPassId")
+    det_writer = passes.PassWriter(det_pass_id)
+    try:
+        size = (asset.proxy_width, asset.proxy_height)
+        total = asset.frame_count or 1
+        tracker = adapter.make_tracker() if asset.type == "video" else None
+        det_frames = []
+        tracks: dict[str, dict] = {}
+        last = 0
+        for idx, frame in _frames(asset):
+            if ctx.cancelled:
+                passes.fail_pass(det_pass_id, "cancelled")
+                return None
+            det = providers.stub_detect(frame, prompt_text, threshold, seed, idx)
+            if tracker is not None:
+                det = tracker.update_with_detections(det)
+            items = adapter.detections_to_schema(det, idx, size)
+            det_frames.append({"frame": idx, "detections": items})
+            for d in items:
+                tid = d.get("trackId")
+                if tid:
+                    tracks.setdefault(tid, {"id": tid, "label": d["label"], "frames": []})
+                    tracks[tid]["frames"].append({"frame": idx, "bbox": d["bbox"],
+                                                  "confidence": d["confidence"]})
+            last = idx
+            if idx % 15 == 0:
+                ctx.update(idx / total, f"detecting frame {idx}/{total}")
+        det_key = det_writer.finalize({
+            "type": "detection", "assetId": asset.id,
+            "provider": "detection", "providerVersion": providers.DETECTOR_VERSION,
+            "width": size[0], "height": size[1],
+            "prompt": {"text": prompt_text, "threshold": threshold}, "frames": det_frames,
+        })
+        n_det = sum(len(f["detections"]) for f in det_frames)
+        passes.finish_pass(det_pass_id, det_key, 0, last,
+                           {"detections": n_det, "frames": len(det_frames)})
+        result = {"passId": det_pass_id}
+        if track_pass_id and tracks:
+            tw = passes.PassWriter(track_pass_id)
+            track_key = tw.finalize({
+                "type": "tracking", "assetId": asset.id,
+                "provider": "tracking", "providerVersion": "supervision-bytetrack",
+                "width": size[0], "height": size[1],
+                "prompt": {"text": prompt_text}, "tracks": list(tracks.values()),
+            })
+            passes.finish_pass(track_pass_id, track_key, 0, last, {"tracks": len(tracks)})
+            result["trackPassId"] = track_pass_id
+        elif track_pass_id:
+            passes.fail_pass(track_pass_id, "no tracks produced")
+        return result
+    except Exception as exc:
+        passes.fail_pass(det_pass_id, str(exc))
+        if track_pass_id:
+            passes.fail_pass(track_pass_id, str(exc))
+        raise
+
+
+@handler("vision.landmarks")
+def run_landmarks(ctx):
+    p = ctx.params
+    asset = _get_asset(p["assetId"])
+    kind = p.get("kind", "face")
+    pass_id = p["passId"]
+    writer = passes.PassWriter(pass_id)
+    sol = None
+    try:
+        process, connections, sol = providers.get_landmarker(kind)
+        total = asset.frame_count or 1
+        frames_meta = []
+        detected = 0
+        last = 0
+        for idx, frame in _frames(asset):
+            if ctx.cancelled:
+                passes.fail_pass(pass_id, "cancelled")
+                return None
+            entities = process(frame)
+            detected += len(entities)
+            frames_meta.append({"frame": idx, "entities": entities})
+            last = idx
+            if idx % 15 == 0:
+                ctx.update(idx / total, f"{kind} landmarks frame {idx}/{total}")
+        pass_type = {"face": "face_landmarks", "pose": "pose_landmarks",
+                     "hands": "hand_landmarks"}[kind]
+        data_key = writer.finalize({
+            "type": pass_type, "assetId": asset.id, "kind": kind,
+            "provider": "landmarks", "providerVersion": providers.mediapipe_version(),
+            "width": asset.proxy_width, "height": asset.proxy_height,
+            "connections": [list(c) for c in connections],
+            "frames": frames_meta,
+        })
+        passes.finish_pass(pass_id, data_key, 0, last,
+                           {"entities": detected, "frames": len(frames_meta)})
+        return {"passId": pass_id}
+    except Exception as exc:
+        passes.fail_pass(pass_id, str(exc))
+        raise
+    finally:
+        if sol is not None:
+            try:
+                sol.close()
+            except Exception:
+                pass
+
+
+@handler("vision.optical_flow")
+def run_optical_flow(ctx):
+    p = ctx.params
+    asset = _get_asset(p["assetId"])
+    if asset.type != "video":
+        raise ValueError("optical flow requires a video asset")
+    pass_id = p["passId"]
+    writer = passes.PassWriter(pass_id)
+    try:
+        total = asset.frame_count or 1
+        # half proxy res keeps Farneback fast; coords are normalized anyway
+        fw = asset.proxy_width // 4 * 2
+        fh = asset.proxy_height // 4 * 2
+        prev_gray = None
+        frames_meta = []
+        mags = []
+        last = 0
+        for idx, frame in _frames(asset):
+            if ctx.cancelled:
+                passes.fail_pass(pass_id, "cancelled")
+                return None
+            gray = cv2.cvtColor(cv2.resize(frame, (fw, fh), interpolation=cv2.INTER_AREA),
+                                cv2.COLOR_BGR2GRAY)
+            if prev_gray is None:
+                frames_meta.append({"frame": idx, "url": None, "scale": 0.0, "meanMag": 0.0})
+            else:
+                flow = providers.farneback_flow(prev_gray, gray)
+                key, scale = writer.write_flow_frame(idx, flow)
+                mean_mag = float(np.linalg.norm(flow, axis=2).mean())
+                mags.append(mean_mag)
+                frames_meta.append({"frame": idx, "url": f"/storage/{key}",
+                                    "scale": round(scale, 3), "meanMag": round(mean_mag, 3)})
+            prev_gray = gray
+            last = idx
+            if idx % 15 == 0:
+                ctx.update(idx / total, f"optical flow frame {idx}/{total}")
+        data_key = writer.finalize({
+            "type": "optical_flow", "assetId": asset.id,
+            "provider": "motion", "providerVersion": providers.FLOW_VERSION,
+            "width": fw, "height": fh, "frames": frames_meta,
+        })
+        passes.finish_pass(pass_id, data_key, 0, last,
+                           {"meanMagnitude": round(float(np.mean(mags)) if mags else 0.0, 3),
+                            "frames": len(frames_meta)})
+        return {"passId": pass_id}
+    except Exception as exc:
+        passes.fail_pass(pass_id, str(exc))
+        raise
+
+
+@handler("vision.edge_matte")
+def run_edge_matte(ctx):
+    p = ctx.params
+    src_pass_id = p["maskPassId"]
+    pass_id = p["passId"]
+    width_frac = float(p.get("edgeWidth", 0.02))
+    src = passes.read_pass_data(src_pass_id)
+    if src["type"] != "mask":
+        raise ValueError("edge matte requires a mask pass")
+    writer = passes.PassWriter(pass_id)
+    try:
+        frames_meta = []
+        n = len(src["frames"])
+        k = max(int(min(src["width"], src["height"]) * width_frac), 2)
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k, k))
+        for i, f in enumerate(src["frames"]):
+            if ctx.cancelled:
+                passes.fail_pass(pass_id, "cancelled")
+                return None
+            mask_key = f"vision-passes/{src_pass_id}/masks/{f['frame']:06d}.png"
+            mask = cv2.imread(str(storage.path_for(mask_key)), cv2.IMREAD_GRAYSCALE)
+            edge = cv2.subtract(cv2.dilate(mask, kernel), cv2.erode(mask, kernel))
+            edge = cv2.GaussianBlur(edge, (k | 1, k | 1), 0)
+            writer.write_mask_frame(f["frame"], edge)
+            frames_meta.append({"frame": f["frame"], "confidence": f.get("confidence")})
+            if i % 20 == 0:
+                ctx.update(i / n, f"edge matte frame {i}/{n}")
+        data_key = writer.finalize({
+            "type": "edge_matte", "assetId": src["assetId"],
+            "provider": "derive", "providerVersion": "edge-matte/0.1",
+            "width": src["width"], "height": src["height"],
+            "sourcePassId": src_pass_id, "frames": frames_meta,
+        })
+        passes.finish_pass(pass_id, data_key, 0,
+                           frames_meta[-1]["frame"] if frames_meta else 0,
+                           {"frames": len(frames_meta)})
+        return {"passId": pass_id}
+    except Exception as exc:
+        passes.fail_pass(pass_id, str(exc))
+        raise
