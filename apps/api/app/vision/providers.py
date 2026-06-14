@@ -182,64 +182,106 @@ def stub_detect(frame: np.ndarray, prompt_text: str, threshold: float,
 
 
 # ------------------------------------------------------------------- landmarks
+# MediaPipe Tasks API (the legacy mp.solutions API was removed in 0.10.3x).
+# Model files download from Google's model garden on first use.
+
+_LANDMARK_MODELS = {
+    "face": ("face_landmarker.task",
+             "https://storage.googleapis.com/mediapipe-models/face_landmarker/"
+             "face_landmarker/float16/latest/face_landmarker.task"),
+    "pose": ("pose_landmarker_full.task",
+             "https://storage.googleapis.com/mediapipe-models/pose_landmarker/"
+             "pose_landmarker_full/float16/latest/pose_landmarker_full.task"),
+    "hands": ("hand_landmarker.task",
+              "https://storage.googleapis.com/mediapipe-models/hand_landmarker/"
+              "hand_landmarker/float16/latest/hand_landmarker.task"),
+}
+
+
+def _landmark_model_path(kind: str) -> str:
+    import urllib.request
+    from ..config import DATA_DIR
+    name, url = _LANDMARK_MODELS[kind]
+    path = DATA_DIR / "models" / name
+    if not path.exists():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(".tmp")
+        urllib.request.urlretrieve(url, tmp)
+        tmp.rename(path)
+    return str(path)
+
 
 def get_landmarker(kind: str):
-    """Returns (process_fn(frame_bgr) -> list[entity], connections, n_points_label).
-    Uses MediaPipe legacy solutions: bundled models, fully offline, CPU-fast."""
+    """Returns (process_fn(frame_bgr, frame_idx) -> list[entity], connections, closer)."""
     import mediapipe as mp
+    from mediapipe.tasks.python import BaseOptions
+    from mediapipe.tasks.python import vision as mpv
+
+    base = BaseOptions(model_asset_path=_landmark_model_path(kind))
+    mode = mpv.RunningMode.VIDEO
+
+    def ts(idx: int) -> int:
+        return idx * 33  # monotonic ms timestamps; exact fps doesn't matter here
+
+    def to_image(frame):
+        return mp.Image(image_format=mp.ImageFormat.SRGB,
+                        data=cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
 
     if kind == "face":
-        sol = mp.solutions.face_mesh.FaceMesh(
-            static_image_mode=False, max_num_faces=2, refine_landmarks=False,
-            min_detection_confidence=0.5, min_tracking_confidence=0.5)
-        connections = sorted(tuple(e) for e in mp.solutions.face_mesh.FACEMESH_TESSELATION)
+        lm = mpv.FaceLandmarker.create_from_options(mpv.FaceLandmarkerOptions(
+            base_options=base, running_mode=mode, num_faces=4,
+            min_face_detection_confidence=0.4, min_tracking_confidence=0.4))
+        connections = sorted({(c.start, c.end) for c in
+                              mpv.FaceLandmarksConnections.FACE_LANDMARKS_TESSELATION})
 
-        def process(frame):
-            res = sol.process(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
-            out = []
-            for i, lms in enumerate(res.multi_face_landmarks or []):
-                pts = [[round(p.x, 4), round(p.y, 4), round(p.z, 4)] for p in lms.landmark]
-                out.append({"id": f"face_{i}", "points": pts})
-            return out
-        return process, connections, sol
+        def process(frame, idx):
+            res = lm.detect_for_video(to_image(frame), ts(idx))
+            return [{"id": f"face_{i}",
+                     "points": [[round(p.x, 4), round(p.y, 4), round(p.z, 4)] for p in lms]}
+                    for i, lms in enumerate(res.face_landmarks)]
+        return process, connections, lm
 
     if kind == "pose":
-        sol = mp.solutions.pose.Pose(static_image_mode=False, model_complexity=1,
-                                     min_detection_confidence=0.5, min_tracking_confidence=0.5)
-        connections = sorted(tuple(e) for e in mp.solutions.pose.POSE_CONNECTIONS)
+        lm = mpv.PoseLandmarker.create_from_options(mpv.PoseLandmarkerOptions(
+            base_options=base, running_mode=mode, num_poses=2,
+            min_pose_detection_confidence=0.4, min_tracking_confidence=0.4))
+        connections = sorted({(c.start, c.end) for c in
+                              mpv.PoseLandmarksConnections.POSE_LANDMARKS})
 
-        def process(frame):
-            res = sol.process(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
-            if not res.pose_landmarks:
-                return []
-            pts = [[round(p.x, 4), round(p.y, 4), round(p.z, 4), round(p.visibility, 3)]
-                   for p in res.pose_landmarks.landmark]
-            return [{"id": "pose_0", "points": pts}]
-        return process, connections, sol
+        def process(frame, idx):
+            res = lm.detect_for_video(to_image(frame), ts(idx))
+            return [{"id": f"pose_{i}",
+                     "points": [[round(p.x, 4), round(p.y, 4), round(p.z, 4),
+                                 round(p.visibility or 0.0, 3)] for p in lms]}
+                    for i, lms in enumerate(res.pose_landmarks)]
+        return process, connections, lm
 
     if kind == "hands":
-        sol = mp.solutions.hands.Hands(static_image_mode=False, max_num_hands=2,
-                                       min_detection_confidence=0.5, min_tracking_confidence=0.5)
-        connections = sorted(tuple(e) for e in mp.solutions.hands.HAND_CONNECTIONS)
+        lm = mpv.HandLandmarker.create_from_options(mpv.HandLandmarkerOptions(
+            base_options=base, running_mode=mode, num_hands=4,
+            min_hand_detection_confidence=0.4, min_tracking_confidence=0.4))
+        connections = sorted({(c.start, c.end) for c in
+                              mpv.HandLandmarksConnections.HAND_CONNECTIONS})
 
-        def process(frame):
-            res = sol.process(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+        def process(frame, idx):
+            res = lm.detect_for_video(to_image(frame), ts(idx))
             out = []
-            for i, lms in enumerate(res.multi_hand_landmarks or []):
-                pts = [[round(p.x, 4), round(p.y, 4), round(p.z, 4)] for p in lms.landmark]
+            for i, lms in enumerate(res.hand_landmarks):
                 handed = None
-                if res.multi_handedness and i < len(res.multi_handedness):
-                    handed = res.multi_handedness[i].classification[0].label.lower()
-                out.append({"id": f"hand_{i}", "handedness": handed, "points": pts})
+                if res.handedness and i < len(res.handedness) and res.handedness[i]:
+                    handed = res.handedness[i][0].category_name.lower()
+                out.append({"id": f"hand_{i}", "handedness": handed,
+                            "points": [[round(p.x, 4), round(p.y, 4), round(p.z, 4)]
+                                       for p in lms]})
             return out
-        return process, connections, sol
+        return process, connections, lm
 
     raise ValueError(f"unknown landmark kind {kind}")
 
 
 def mediapipe_version() -> str:
     import mediapipe as mp
-    return f"mediapipe/{mp.__version__}"
+    return f"mediapipe-tasks/{mp.__version__}"
 
 
 # ---------------------------------------------------------------- optical flow

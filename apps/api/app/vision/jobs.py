@@ -238,7 +238,7 @@ def run_landmarks(ctx):
             if ctx.cancelled:
                 passes.fail_pass(pass_id, "cancelled")
                 return None
-            entities = process(frame)
+            entities = process(frame, idx)
             detected += len(entities)
             frames_meta.append({"frame": idx, "entities": entities})
             last = idx
@@ -254,7 +254,8 @@ def run_landmarks(ctx):
             "frames": frames_meta,
         })
         passes.finish_pass(pass_id, data_key, 0, last,
-                           {"entities": detected, "frames": len(frames_meta)})
+                           {"entities": detected, "frames": len(frames_meta)},
+                           providers.mediapipe_version())
         return {"passId": pass_id}
     except Exception as exc:
         passes.fail_pass(pass_id, str(exc))
