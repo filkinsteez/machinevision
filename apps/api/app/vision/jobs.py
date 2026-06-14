@@ -228,6 +228,7 @@ def run_landmarks(ctx):
     pass_id = p["passId"]
     writer = passes.PassWriter(pass_id)
     sol = None
+    pose_sol = None
     try:
         process, connections, sol = providers.get_landmarker(kind)
         total = asset.frame_count or 1
@@ -235,11 +236,42 @@ def run_landmarks(ctx):
         detected = 0
         last = 0
         frames_with = 0
+        # Face mesh hallucinates on textured non-face regions (jackets, knees) in
+        # distorted footage. Gate detections against the pose skeleton, which
+        # robustly locates the real head — keep a face only if its box contains a
+        # pose head keypoint (nose/eyes/ears).
+        pose_process = pose_sol = None
+        if kind == "face":
+            try:
+                pose_process, _, pose_sol = providers.get_landmarker("pose")
+            except Exception:
+                pose_process = None
         for idx, frame in _frames(asset):
             if ctx.cancelled:
                 passes.fail_pass(pass_id, "cancelled")
                 return None
             entities = process(frame, idx)
+            if pose_process is not None and entities:
+                head = []
+                for pent in pose_process(frame, idx):
+                    pts = pent["points"]
+                    for hi in (0, 2, 5, 7, 8):  # nose, eyes, ears
+                        if hi < len(pts) and (len(pts[hi]) < 4 or pts[hi][3] > 0.3):
+                            head.append((pts[hi][0], pts[hi][1]))
+                # Only gate when pose actually located a head. A close-up portrait
+                # may have no visible body — there we must trust the face as-is
+                # rather than reject a real detection.
+                if head:
+                    kept = []
+                    for ent in entities:
+                        xs = [pt[0] for pt in ent["points"]]
+                        ys = [pt[1] for pt in ent["points"]]
+                        pad_x = (max(xs) - min(xs)) * 0.25
+                        pad_y = (max(ys) - min(ys)) * 0.25
+                        if any(min(xs) - pad_x <= hx <= max(xs) + pad_x and
+                               min(ys) - pad_y <= hy <= max(ys) + pad_y for hx, hy in head):
+                            kept.append(ent)
+                    entities = kept
             detected += len(entities)
             if entities:
                 frames_with += 1
@@ -266,6 +298,11 @@ def run_landmarks(ctx):
         passes.fail_pass(pass_id, str(exc))
         raise
     finally:
+        if pose_sol is not None:
+            try:
+                pose_sol.close()
+            except Exception:
+                pass
         if sol is not None:
             try:
                 sol.close()

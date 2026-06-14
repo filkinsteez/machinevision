@@ -228,11 +228,12 @@ def get_landmarker(kind: str):
                         data=cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
 
     if kind == "face":
-        # low thresholds: small/turned faces in action footage barely clear 0.4
+        # Permissive thresholds catch small/turned faces; the pose-skeleton gate
+        # in run_landmarks rejects the hallucinations this lets through.
         lm = mpv.FaceLandmarker.create_from_options(mpv.FaceLandmarkerOptions(
             base_options=base, running_mode=mode, num_faces=5,
-            min_face_detection_confidence=0.2, min_face_presence_confidence=0.2,
-            min_tracking_confidence=0.2))
+            min_face_detection_confidence=0.3, min_face_presence_confidence=0.3,
+            min_tracking_confidence=0.3))
         connections = sorted({(c.start, c.end) for c in
                               mpv.FaceLandmarksConnections.FACE_LANDMARKS_TESSELATION})
 
@@ -246,8 +247,8 @@ def get_landmarker(kind: str):
     if kind == "pose":
         lm = mpv.PoseLandmarker.create_from_options(mpv.PoseLandmarkerOptions(
             base_options=base, running_mode=mode, num_poses=3,
-            min_pose_detection_confidence=0.3, min_pose_presence_confidence=0.3,
-            min_tracking_confidence=0.3))
+            min_pose_detection_confidence=0.5, min_pose_presence_confidence=0.4,
+            min_tracking_confidence=0.4))
         connections = sorted({(c.start, c.end) for c in
                               mpv.PoseLandmarksConnections.POSE_LANDMARKS})
 
@@ -262,8 +263,8 @@ def get_landmarker(kind: str):
     if kind == "hands":
         lm = mpv.HandLandmarker.create_from_options(mpv.HandLandmarkerOptions(
             base_options=base, running_mode=mode, num_hands=4,
-            min_hand_detection_confidence=0.3, min_hand_presence_confidence=0.3,
-            min_tracking_confidence=0.3))
+            min_hand_detection_confidence=0.5, min_hand_presence_confidence=0.4,
+            min_tracking_confidence=0.4))
         connections = sorted({(c.start, c.end) for c in
                               mpv.HandLandmarksConnections.HAND_CONNECTIONS})
 
