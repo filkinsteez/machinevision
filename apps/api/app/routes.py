@@ -23,7 +23,7 @@ def _get_or_404(db, model, obj_id: str):
 # ---------------------------------------------------------------------- projects
 
 class ProjectCreate(BaseModel):
-    name: str = "Untitled Machine Vision Project"
+    name: str = "Untitled Machine Industries Project"
 
 
 class ProjectPatch(BaseModel):

@@ -1,5 +1,5 @@
 """Supervision adapter (PRD §13). All detection-shaped model output flows through
-sv.Detections before normalization to Machine Vision pass schemas — this is the
+sv.Detections before normalization to Machine Industries pass schemas — this is the
 interoperability seam that keeps providers swappable.
 """
 import numpy as np

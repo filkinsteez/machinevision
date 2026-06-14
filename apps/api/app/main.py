@@ -26,14 +26,14 @@ def _warm_models():
             providers_real._get_dino()
             providers_real._get_sam2_video()
             providers_real._get_sam2_image()
-            print("[machine-vision] GPU providers warmed:", providers_real.versions())
+            print("[machine.industries] GPU providers warmed:", providers_real.versions())
     except Exception as exc:
-        print(f"[machine-vision] GPU providers unavailable ({exc}); stub roster active")
+        print(f"[machine.industries] GPU providers unavailable ({exc}); stub roster active")
 
 
 threading.Thread(target=_warm_models, daemon=True).start()
 
-app = FastAPI(title="Machine Vision API", version="0.2")
+app = FastAPI(title="Machine Industries API", version="0.2")
 
 app.add_middleware(
     CORSMiddleware,

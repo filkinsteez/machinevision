@@ -40,9 +40,9 @@ export default function App() {
   return (
     <div className="app">
       <header>
-        <span className="logo">MACHINE VISION</span>
+        <span className="logo">MACHINE INDUSTRIES</span>
         <span className="dim">{project?.name ?? "…"}</span>
-        <span className="dim right">v0.2 · local</span>
+        <span className="dim right">machine.industries · v0.2</span>
       </header>
       <div className="cols">
         <aside className="left">

@@ -86,7 +86,7 @@ export const useStore = create<State>((set, get) => ({
 
   boot: async () => {
     const projects = await api.listProjects();
-    const project = projects[0] ?? (await api.createProject("Untitled Machine Vision Project"));
+    const project = projects[0] ?? (await api.createProject("Untitled Machine Industries Project"));
     set({ project });
     await get().refresh();
     const presets = await api.listPresets();

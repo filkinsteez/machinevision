@@ -1,8 +1,8 @@
-# Machine Vision
+# Machine Industries
 
-A hybrid creative web app for turning computer vision analysis into rendered visual artifacts — semantic datamosh, segmentation effects, face/pose meshes, object-locked overlays, optical-flow smears, ASCII shaders, pixel sorting, and exportable vision passes.
+**machine.industries** — a hybrid creative web app for turning computer vision analysis into rendered visual artifacts — semantic datamosh, segmentation effects, face/pose meshes, object-locked overlays, optical-flow smears, ASCII shaders, pixel sorting, and exportable vision passes.
 
-> Machine Vision lets artists render what the machine thinks it sees.
+> Machine Industries lets artists render what the machine thinks it sees.
 
 ## Documents
 

@@ -36,7 +36,7 @@ class JSONMixin:
 class Project(Base, JSONMixin):
     __tablename__ = "projects"
     id = Column(String, primary_key=True)
-    name = Column(String, nullable=False, default="Untitled Machine Vision Project")
+    name = Column(String, nullable=False, default="Untitled Machine Industries Project")
     version = Column(String, default="0.2")
     owner_id = Column(String, nullable=True)  # auth comes in beta hardening
     render_layers = Column(Text, default="[]")
