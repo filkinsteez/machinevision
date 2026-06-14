@@ -5,7 +5,15 @@ import { useStore } from "../store";
 const TYPE_TAGS: Record<string, string> = {
   mask: "MSK", detection: "DET", tracking: "TRK", face_landmarks: "FACE",
   pose_landmarks: "POSE", hand_landmarks: "HAND", optical_flow: "FLOW", edge_matte: "EDGE",
+  body_parts: "PART", depth: "DPTH", normals: "NRML",
 };
+
+// common Sapiens parts for the quick derive-to-mask picker (id -> label)
+const QUICK_PARTS: [number, string][] = [
+  [3, "Hair"], [2, "Face/Neck"], [21, "Torso"], [22, "Upper Clothing"],
+  [12, "Lower Clothing"], [10, "L Up Arm"], [19, "R Up Arm"], [6, "L Lo Arm"],
+  [15, "R Lo Arm"], [5, "L Hand"], [14, "R Hand"], [11, "L Up Leg"], [20, "R Up Leg"],
+];
 
 export function PassesPanel() {
   const passes = useStore(useShallow((s) => s.passes.filter((p) => p.assetId === s.selectedAssetId)));
@@ -25,7 +33,11 @@ export function PassesPanel() {
   const visiblePassId = useStore((s) => s.visiblePassId);
   const setVisiblePass = useStore((s) => s.setVisiblePass);
   const addLayerForPass = useStore((s) => s.addLayerForPass);
+  const runSapiens = useStore((s) => s.runSapiens);
+  const runBodyPartMask = useStore((s) => s.runBodyPartMask);
   const [detectPrompt, setDetectPrompt] = useState("the subject");
+  const [partPicker, setPartPicker] = useState<string | null>(null);
+  const [pickedParts, setPickedParts] = useState<number[]>([3]);
 
   const ready = asset?.status === "ready";
   const hasPrompt = promptPoints.length > 0 || promptBox != null;
@@ -70,40 +82,74 @@ export function PassesPanel() {
             <button onClick={() => runLandmarks("hands")}>HANDS</button>
             {asset?.type === "video" && <button onClick={runFlow}>FLOW</button>}
           </div>
+          <div className="gen-label dim">SAPIENS · human analysis</div>
+          <div className="seg-tools wrap">
+            <button title="28-class body-part segmentation" onClick={() => runSapiens("body_parts")}>PARTS</button>
+            <button title="human-centric depth" onClick={() => runSapiens("depth")}>DEPTH</button>
+            <button title="surface normals" onClick={() => runSapiens("normals")}>NORMALS</button>
+          </div>
         </div>
       )}
       <ul className="pass-list">
         {passes.map((p) => (
           <li key={p.id} className={p.status}>
-            <span className="tag">{TYPE_TAGS[p.type] ?? p.type.slice(0, 4).toUpperCase()}</span>
-            <div className="grow">
-              <div className="name">{p.name}</div>
-              <div className="dim">
-                {p.status === "ready"
-                  ? Object.entries(p.summary).map(([k, v]) => `${k} ${v}`).join(" · ")
-                  : p.status === "failed" ? (p.error ?? "failed") : p.status}
+            <div className="pass-row">
+              <span className="tag">{TYPE_TAGS[p.type] ?? p.type.slice(0, 4).toUpperCase()}</span>
+              <div className="grow">
+                <div className="name">{p.name}</div>
+                <div className="dim">
+                  {p.status === "ready"
+                    ? Object.entries(p.summary).map(([k, v]) => `${k} ${v}`).join(" · ")
+                    : p.status === "failed" ? (p.error ?? "failed") : p.status}
+                </div>
               </div>
-            </div>
-            {p.status === "ready" && (
-              <>
-                <button
-                  title="quick view (unstyled) — use +LYR for a styleable layer"
-                  className={visiblePassId === p.id ? "active" : ""}
-                  onClick={() => setVisiblePass(visiblePassId === p.id ? null : p.id)}
-                >◉</button>
-                {p.type !== "tracking" && (
+              {p.status === "ready" && (
+                <>
                   <button
-                    className="go"
-                    title="create a render layer from this pass — all styling lives there"
-                    onClick={() => addLayerForPass(p)}
-                  >+LYR</button>
-                )}
-                {p.type === "mask" && (
-                  <button title="derive edge matte" onClick={() => runEdgeMatte(p.id)}>EDG</button>
-                )}
-              </>
+                    title="quick view (unstyled) — use +LYR for a styleable layer"
+                    className={visiblePassId === p.id ? "active" : ""}
+                    onClick={() => setVisiblePass(visiblePassId === p.id ? null : p.id)}
+                  >◉</button>
+                  {p.type !== "tracking" && (
+                    <button
+                      className="go"
+                      title="create a render layer from this pass — all styling lives there"
+                      onClick={() => addLayerForPass(p)}
+                    >+LYR</button>
+                  )}
+                  {p.type === "mask" && (
+                    <button title="derive edge matte" onClick={() => runEdgeMatte(p.id)}>EDG</button>
+                  )}
+                  {p.type === "body_parts" && (
+                    <button
+                      title="derive a mask from selected parts (feeds datamosh, pixel sort…)"
+                      className={partPicker === p.id ? "active" : ""}
+                      onClick={() => setPartPicker(partPicker === p.id ? null : p.id)}
+                    >→MSK</button>
+                  )}
+                </>
+              )}
+              <button title="delete" onClick={() => deletePass(p.id)}>✕</button>
+            </div>
+            {partPicker === p.id && (
+              <div className="part-picker">
+                <div className="chips">
+                  {QUICK_PARTS.map(([id, label]) => (
+                    <button
+                      key={id}
+                      className={pickedParts.includes(id) ? "active" : ""}
+                      onClick={() => setPickedParts((cur) =>
+                        cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id])}
+                    >{label}</button>
+                  ))}
+                </div>
+                <button
+                  className="go wide"
+                  disabled={!pickedParts.length}
+                  onClick={() => { runBodyPartMask(p.id, pickedParts); setPartPicker(null); }}
+                >DERIVE MASK ({pickedParts.length} part{pickedParts.length === 1 ? "" : "s"})</button>
+              </div>
             )}
-            <button title="delete" onClick={() => deletePass(p.id)}>✕</button>
           </li>
         ))}
         {!passes.length && <li className="dim empty">no passes yet — prompt the machine above</li>}

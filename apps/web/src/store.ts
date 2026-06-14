@@ -40,6 +40,8 @@ interface State {
   runLandmarks: (kind: string) => Promise<void>;
   runFlow: () => Promise<void>;
   runEdgeMatte: (maskPassId: string) => Promise<void>;
+  runSapiens: (task: "body_parts" | "depth" | "normals") => Promise<void>;
+  runBodyPartMask: (bodyPartsPassId: string, partIds: number[]) => Promise<void>;
   deletePass: (id: string) => Promise<void>;
   setVisiblePass: (id: string | null) => void;
   addLayerForPass: (pass: VisionPass) => void;
@@ -218,6 +220,24 @@ export const useStore = create<State>((set, get) => ({
     } catch (e) { set({ error: String(e) }); }
   },
 
+  runSapiens: async (task) => {
+    const { project, selectedAssetId } = get();
+    if (!project || !selectedAssetId) return;
+    try {
+      await api.sapiens(project.id, selectedAssetId, task);
+      await get().refresh();
+    } catch (e) { set({ error: String(e) }); }
+  },
+
+  runBodyPartMask: async (bodyPartsPassId, partIds) => {
+    const { project } = get();
+    if (!project || !partIds.length) return;
+    try {
+      await api.bodyPartMask(project.id, bodyPartsPassId, partIds);
+      await get().refresh();
+    } catch (e) { set({ error: String(e) }); }
+  },
+
   deletePass: async (id) => {
     await api.deletePass(id);
     if (get().visiblePassId === id) set({ visiblePassId: null });
@@ -237,6 +257,9 @@ export const useStore = create<State>((set, get) => ({
       face_landmarks: "landmark_overlay",
       pose_landmarks: "landmark_overlay",
       hand_landmarks: "landmark_overlay",
+      body_parts: "body_parts",
+      depth: "sapiens_depth",
+      normals: "sapiens_normals",
     };
     const def = layerDef(typeFor[pass.type] ?? "");
     if (!def) return;

@@ -37,6 +37,15 @@ class PassWriter:
         storage.save_bytes(key, buf.tobytes())
         return key
 
+    def write_frame(self, subdir: str, idx: int, img: np.ndarray) -> str:
+        """Generic per-frame PNG writer (grayscale or BGR) under {subdir}/."""
+        key = f"{self.prefix}/{subdir}/{idx:06d}.png"
+        ok, buf = cv2.imencode(".png", img)
+        if not ok:
+            raise RuntimeError("png encode failed")
+        storage.save_bytes(key, buf.tobytes())
+        return key
+
     def write_flow_frame(self, idx: int, flow: np.ndarray) -> tuple[str, float]:
         """flow: HxWx2 float32. Packed as R=u, G=v normalized by per-frame scale."""
         mag = float(np.abs(flow).max())

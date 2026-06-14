@@ -107,9 +107,14 @@ input[type="number"].seed { width: 72px; }
 .hint { font-size: 10px; }
 .pass-list, .layer-list, .preset-list, .export-list, .layer-add-list { list-style: none; display: flex; flex-direction: column; gap: 2px; }
 .pass-list li {
-  display: flex; gap: 6px; align-items: center; padding: 5px 4px;
+  display: flex; flex-direction: column; gap: 5px; padding: 5px 4px;
   border-bottom: 1px solid var(--line);
 }
+.pass-row { display: flex; gap: 6px; align-items: center; }
+.gen-label { font-size: 9px; letter-spacing: 0.14em; margin-top: 4px; }
+.part-picker { display: flex; flex-direction: column; gap: 5px; padding: 4px 2px 6px; }
+.part-picker .chips { display: flex; flex-wrap: wrap; gap: 3px; }
+.part-picker .chips button.active { border-color: var(--green); color: var(--green); }
 .pass-list li.running { color: var(--blue); }
 .pass-list li.failed { color: var(--red); }
 .pass-list .name { font-size: 11px; color: var(--text); }

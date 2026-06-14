@@ -3,7 +3,7 @@
  * injected as textures. */
 import type { RenderLayer } from "../types";
 import { compileProgram, createTarget, createTexture, hexToRgb, uploadImage, type Target } from "./gl";
-import { getFlowFrame, getMaskBitmap } from "./passData";
+import { getFieldBitmap, getFlowFrame, getMaskBitmap } from "./passData";
 import { buildGlyphAtlas, SHADERS } from "./shaders";
 import { PixelSortManager } from "./pixelsort";
 
@@ -22,6 +22,7 @@ export class Compositor {
   private maskTex: WebGLTexture;
   private flowTex: WebGLTexture;
   private sortedTex: WebGLTexture;
+  private fieldTex: WebGLTexture;
   private atlasTex: WebGLTexture;
   private nGlyphs: number;
   private blackTex: WebGLTexture;
@@ -46,6 +47,7 @@ export class Compositor {
     this.maskTex = createTexture(gl, width, height);
     this.flowTex = createTexture(gl, width, height);
     this.sortedTex = createTexture(gl, width, height);
+    this.fieldTex = createTexture(gl, width, height);
     this.blackTex = createTexture(gl, 2, 2);
     const atlas = buildGlyphAtlas();
     this.nGlyphs = atlas.nGlyphs;
@@ -155,6 +157,19 @@ export class Compositor {
         }
       }
 
+      // Sapiens field routing (body_parts / depth / normals)
+      const fieldPassId = layer.sources.field ?? null;
+      let hasField = 0;
+      if (fieldPassId) {
+        const bmp = getFieldBitmap(fieldPassId, frame);
+        if (bmp) {
+          uploadImage(gl, this.fieldTex, bmp);
+          hasField = 1;
+        }
+      }
+      this.bindTex(prog, "u_field", 7, hasField ? this.fieldTex : this.blackTex);
+      this.u1i(prog, "u_hasField", hasField);
+
       this.bindTex(prog, "u_atlas", 6, this.atlasTex);
       this.u1f(prog, "u_nGlyphs", this.nGlyphs);
 
@@ -221,6 +236,19 @@ export class Compositor {
         this.u1f(prog, "u_strength", Number(p.strength ?? 3));
         this.u1f(prog, "u_decay", Number(p.decay ?? 0.94));
         this.u1i(prog, "u_region", select("region", ["all", "inside", "outside"]));
+        break;
+      case "body_parts":
+        this.u1i(prog, "u_mode", select("mode", ["colorize", "isolate"]));
+        this.u1f(prog, "u_selectId", parseInt(String(p.partId ?? "3"), 10) || 0);
+        this.u3f(prog, "u_color", hexToRgb(String(p.color ?? "#FF5A00")));
+        this.u1f(prog, "u_saturation", Number(p.saturation ?? 0.6));
+        break;
+      case "sapiens_depth":
+        this.u1i(prog, "u_mode", select("mode", ["colormap", "tint", "fog"]));
+        this.u3f(prog, "u_color", hexToRgb(String(p.color ?? "#2962FF")));
+        break;
+      case "sapiens_normals":
+        this.u1i(prog, "u_mode", select("mode", ["rgb", "relief"]));
         break;
       case "datamosh_preview":
         this.u1f(prog, "u_strength", Number(p.strength ?? 0.85));

@@ -178,6 +178,18 @@ class EdgeMatteRequest(BaseModel):
     edgeWidth: float = 0.02
 
 
+class SapiensRequest(BaseModel):
+    projectId: str
+    assetId: str
+    task: str  # body_parts | depth | normals
+
+
+class BodyPartMaskRequest(BaseModel):
+    projectId: str
+    bodyPartsPassId: str
+    partIds: list[int]
+
+
 def _cached_pass(db, ckey: str):
     return (db.query(VisionPass)
             .filter(VisionPass.cache_key == ckey, VisionPass.status == "ready")
@@ -259,6 +271,27 @@ def vision_edge_matte(body: EdgeMatteRequest):
                        f"edge:{src.name}", "derive", {"source": body.maskPassId},
                        {"edgeWidth": body.edgeWidth}, "vision.edge_matte",
                        {"maskPassId": body.maskPassId, "edgeWidth": body.edgeWidth})
+
+
+@router.post("/vision/sapiens")
+def vision_sapiens(body: SapiensRequest):
+    if body.task not in ("body_parts", "depth", "normals"):
+        raise HTTPException(400, "task must be body_parts|depth|normals")
+    label = {"body_parts": "body parts", "depth": "depth", "normals": "normals"}[body.task]
+    return _spawn_pass(body.projectId, body.assetId, body.task, f"sapiens {label}",
+                       "sapiens", {"task": body.task}, {}, "vision.sapiens",
+                       {"assetId": body.assetId, "task": body.task})
+
+
+@router.post("/vision/body-part-mask")
+def vision_body_part_mask(body: BodyPartMaskRequest):
+    with SessionLocal() as db:
+        src = _get_or_404(db, VisionPass, body.bodyPartsPassId)
+    return _spawn_pass(body.projectId, src.asset_id, "mask",
+                       "body-part mask", "sapiens-derive",
+                       {"source": body.bodyPartsPassId, "parts": body.partIds}, {},
+                       "vision.body_part_mask",
+                       {"bodyPartsPassId": body.bodyPartsPassId, "partIds": body.partIds})
 
 
 @router.get("/projects/{project_id}/vision-passes")

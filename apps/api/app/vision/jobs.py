@@ -5,7 +5,7 @@ import numpy as np
 from .. import media, storage
 from ..db import Asset, SessionLocal
 from ..jobs import handler
-from . import adapter, passes, providers, providers_real
+from . import adapter, passes, providers, providers_real, providers_sapiens
 
 
 def _get_asset(asset_id: str) -> Asset:
@@ -354,6 +354,129 @@ def run_edge_matte(ctx):
         passes.finish_pass(pass_id, data_key, 0,
                            frames_meta[-1]["frame"] if frames_meta else 0,
                            {"frames": len(frames_meta)})
+        return {"passId": pass_id}
+    except Exception as exc:
+        passes.fail_pass(pass_id, str(exc))
+        raise
+
+
+@handler("vision.sapiens")
+def run_sapiens(ctx):
+    """Meta Sapiens human-centric analysis: body_parts | depth | normals."""
+    p = ctx.params
+    asset = _get_asset(p["assetId"])
+    task = p["task"]
+    pass_id = p["passId"]
+    if not providers_sapiens.available():
+        passes.fail_pass(pass_id, "Sapiens needs a CUDA GPU on the server")
+        raise ValueError("Sapiens requires CUDA")
+    writer = passes.PassWriter(pass_id)
+    size = (asset.proxy_width, asset.proxy_height)
+    total = asset.frame_count or 1
+    try:
+        frames_meta = []
+        present_classes: set[int] = set()
+        last = 0
+        for idx, frame in _frames(asset):
+            if ctx.cancelled:
+                passes.fail_pass(pass_id, "cancelled")
+                return None
+
+            if task == "body_parts":
+                ids = providers_sapiens.infer_body_parts(frame)
+                ids_full = cv2.resize(ids, size, interpolation=cv2.INTER_NEAREST)
+                writer.write_frame("frames", idx, ids_full)  # class id per pixel
+                present = np.unique(ids_full)
+                present_classes.update(int(c) for c in present)
+                frames_meta.append({"frame": idx,
+                                    "area": round(float((ids_full > 0).mean()), 4)})
+
+            elif task == "depth":
+                d = providers_sapiens.infer_depth(frame)
+                d = cv2.resize(d, size, interpolation=cv2.INTER_LINEAR)
+                lo, hi = np.percentile(d, [2, 98])
+                norm = np.clip((d - lo) / (hi - lo + 1e-6), 0, 1)
+                # near = bright: invert so closer surfaces read hotter downstream
+                writer.write_frame("frames", idx, ((1 - norm) * 255).astype(np.uint8))
+                frames_meta.append({"frame": idx, "min": round(float(lo), 3),
+                                    "max": round(float(hi), 3)})
+
+            elif task == "normals":
+                n = providers_sapiens.infer_normals(frame)
+                n = cv2.resize(n, size, interpolation=cv2.INTER_LINEAR)
+                enc = ((n * 0.5 + 0.5) * 255).astype(np.uint8)  # xyz -> RGB
+                writer.write_frame("frames", idx, cv2.cvtColor(enc, cv2.COLOR_RGB2BGR))
+                frames_meta.append({"frame": idx})
+            else:
+                raise ValueError(f"unknown sapiens task {task}")
+
+            last = idx
+            if idx % 5 == 0:
+                ctx.update(idx / total, f"sapiens {task} frame {idx}/{total}")
+
+        pass_type = {"body_parts": "body_parts", "depth": "depth",
+                     "normals": "normals"}[task]
+        meta = {
+            "type": pass_type, "assetId": asset.id,
+            "provider": "sapiens", "providerVersion": providers_sapiens.version(task),
+            "width": size[0], "height": size[1], "frames": frames_meta,
+        }
+        if task == "body_parts":
+            meta["classNames"] = providers_sapiens.GOLIATH_CLASSES
+            meta["presentClasses"] = sorted(present_classes)
+        data_key = writer.finalize(meta)
+        summary = {"frames": len(frames_meta)}
+        if task == "body_parts":
+            summary["parts"] = len([c for c in present_classes if c != 0])
+        passes.finish_pass(pass_id, data_key, 0, last, summary,
+                           providers_sapiens.version(task))
+        return {"passId": pass_id}
+    except Exception as exc:
+        passes.fail_pass(pass_id, str(exc))
+        raise
+
+
+@handler("vision.body_part_mask")
+def run_body_part_mask(ctx):
+    """Derive a binary mask pass from selected Sapiens body-part class ids.
+    Reuses all mask-consuming render layers (datamosh, pixel sort, edge decay)."""
+    p = ctx.params
+    src_pass_id = p["bodyPartsPassId"]
+    part_ids = set(int(i) for i in p["partIds"])
+    pass_id = p["passId"]
+    src = passes.read_pass_data(src_pass_id)
+    if src["type"] != "body_parts":
+        raise ValueError("body part mask requires a body_parts pass")
+    writer = passes.PassWriter(pass_id)
+    names = src.get("classNames", [])
+    label = "+".join(names[i] for i in sorted(part_ids) if i < len(names)) or "parts"
+    try:
+        frames_meta = []
+        n = len(src["frames"])
+        for i, f in enumerate(src["frames"]):
+            if ctx.cancelled:
+                passes.fail_pass(pass_id, "cancelled")
+                return None
+            key = f"vision-passes/{src_pass_id}/frames/{f['frame']:06d}.png"
+            ids = cv2.imread(str(storage.path_for(key)), cv2.IMREAD_GRAYSCALE)
+            mask = np.isin(ids, list(part_ids)).astype(np.uint8) * 255
+            mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE,
+                                    cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5)))
+            writer.write_mask_frame(f["frame"], mask)
+            frames_meta.append({"frame": f["frame"], "confidence": 1.0,
+                                "area": round(float((mask > 0).mean()), 4)})
+            if i % 20 == 0:
+                ctx.update(i / n, f"body-part mask {i}/{n}")
+        data_key = writer.finalize({
+            "type": "mask", "assetId": src["assetId"],
+            "provider": "sapiens-derive", "providerVersion": "body-part-mask/0.1",
+            "width": src["width"], "height": src["height"],
+            "prompt": {"type": "body_parts", "parts": label}, "frames": frames_meta,
+        })
+        passes.finish_pass(pass_id, data_key, 0,
+                           frames_meta[-1]["frame"] if frames_meta else 0,
+                           {"frames": len(frames_meta), "parts": label},
+                           "body-part-mask/0.1")
         return {"passId": pass_id}
     except Exception as exc:
         passes.fail_pass(pass_id, str(exc))

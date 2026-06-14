@@ -71,6 +71,25 @@ export function getMaskBitmap(passId: string, frame: number, prefetch = 4): Imag
   return null;
 }
 
+/** Generic per-frame field loader (Sapiens body_parts / depth / normals),
+ * stored under frames/. Same LRU + nearest-earlier fallback as masks. */
+export function getFieldBitmap(passId: string, frame: number, prefetch = 4): ImageBitmap | null {
+  const cache = cacheFor(`field:${passId}`);
+  for (let f = frame; f < frame + prefetch; f++) {
+    if (!cache.has(f)) {
+      fetchBitmap(cache, `/storage/vision-passes/${passId}/frames/${String(f).padStart(6, "0")}.png`, f);
+    }
+  }
+  const exact = cache.get(frame);
+  if (exact instanceof ImageBitmap) return exact;
+  for (let back = 1; back <= 12; back++) {
+    const v = cache.get(frame - back);
+    if (v instanceof ImageBitmap) return v;
+  }
+  for (const v of cache.values()) if (v instanceof ImageBitmap) return v;
+  return null;
+}
+
 export function getFlowFrame(passId: string, frame: number, prefetch = 4):
   { bitmap: ImageBitmap; scale: number } | null {
   const data = getPassJSON(passId);

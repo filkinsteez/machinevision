@@ -153,6 +153,80 @@ void main() {
   frag = composite(src, fx, 1.0);
 }`,
 
+  body_parts: COMMON + `
+uniform sampler2D u_field;
+uniform int u_hasField;
+uniform int u_mode;       // 0 colorize, 1 isolate
+uniform float u_selectId; // part id to isolate
+uniform vec3 u_color;
+uniform float u_saturation;
+vec3 hsv2rgb(vec3 c) {
+  vec4 K = vec4(1.0, 2.0/3.0, 1.0/3.0, 3.0);
+  vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
+  return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+}
+void main() {
+  vec3 src = texture(u_src, v_uv).rgb;
+  if (u_hasField == 0) { frag = vec4(src, 1.0); return; }
+  float id = floor(texture(u_field, v_uv).r * 255.0 + 0.5);
+  vec3 fx; float w;
+  if (u_mode == 1) {
+    w = abs(id - u_selectId) < 0.5 ? 1.0 : 0.0;
+    fx = mix(src, u_color, w);
+    frag = composite(src, fx, w);
+    return;
+  }
+  float on = id > 0.5 ? 1.0 : 0.0;
+  vec3 col = hsv2rgb(vec3(fract(id * 0.1396), u_saturation, 1.0));
+  frag = composite(src, mix(src, col, on), on);
+}`,
+
+  sapiens_depth: COMMON + `
+uniform sampler2D u_field;
+uniform int u_hasField;
+uniform int u_mode;   // 0 colormap, 1 tint, 2 fog
+uniform vec3 u_color;
+vec3 ramp(float t) {
+  vec3 c0 = vec3(0.02, 0.02, 0.09);
+  vec3 c1 = vec3(0.35, 0.05, 0.43);
+  vec3 c2 = vec3(0.92, 0.36, 0.05);
+  vec3 c3 = vec3(1.0, 0.98, 0.78);
+  if (t < 0.33) return mix(c0, c1, t / 0.33);
+  if (t < 0.66) return mix(c1, c2, (t - 0.33) / 0.33);
+  return mix(c2, c3, (t - 0.66) / 0.34);
+}
+void main() {
+  vec3 src = texture(u_src, v_uv).rgb;
+  if (u_hasField == 0) { frag = vec4(src, 1.0); return; }
+  float d = texture(u_field, v_uv).r;
+  float present = d > 0.004 ? 1.0 : 0.0; // background encodes ~0
+  vec3 fx;
+  if (u_mode == 1) fx = mix(src, u_color, d);
+  else if (u_mode == 2) fx = src * mix(0.15, 1.0, d);
+  else fx = ramp(d);
+  frag = composite(src, fx, present);
+}`,
+
+  sapiens_normals: COMMON + `
+uniform sampler2D u_field;
+uniform int u_hasField;
+uniform int u_mode;  // 0 rgb, 1 relief
+void main() {
+  vec3 src = texture(u_src, v_uv).rgb;
+  if (u_hasField == 0) { frag = vec4(src, 1.0); return; }
+  vec3 n = texture(u_field, v_uv).rgb;
+  float present = length(n - 0.5) > 0.02 ? 1.0 : 0.0;
+  vec3 fx;
+  if (u_mode == 1) {
+    vec3 nv = normalize(n * 2.0 - 1.0);
+    float light = clamp(dot(nv, normalize(vec3(0.4, 0.6, 0.7))), 0.0, 1.0);
+    fx = src * (0.4 + 0.9 * light);
+  } else {
+    fx = n;
+  }
+  frag = composite(src, fx, present);
+}`,
+
   datamosh_preview: COMMON + `
 uniform sampler2D u_flow;
 uniform sampler2D u_prev;

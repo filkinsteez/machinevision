@@ -28,7 +28,8 @@ export interface Asset {
 
 export type PassType =
   | "mask" | "detection" | "tracking" | "face_landmarks" | "pose_landmarks"
-  | "hand_landmarks" | "optical_flow" | "edge_matte";
+  | "hand_landmarks" | "optical_flow" | "edge_matte"
+  | "body_parts" | "depth" | "normals";
 
 export interface VisionPass {
   id: string;

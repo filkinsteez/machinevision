@@ -3,6 +3,17 @@
  * never from provider-specific knowledge (PRD §12.2, §37.2). */
 import type { PassType, RenderLayer } from "./types";
 
+/** Goliath 28-class body-part labels (Sapiens segmentation), "id: Name" form. */
+export const GOLIATH_PART_OPTIONS = [
+  "0: Background", "1: Apparel", "2: Face/Neck", "3: Hair", "4: Left Foot",
+  "5: Left Hand", "6: Left Lower Arm", "7: Left Lower Leg", "8: Left Shoe",
+  "9: Left Sock", "10: Left Upper Arm", "11: Left Upper Leg", "12: Lower Clothing",
+  "13: Right Foot", "14: Right Hand", "15: Right Lower Arm", "16: Right Lower Leg",
+  "17: Right Shoe", "18: Right Sock", "19: Right Upper Arm", "20: Right Upper Leg",
+  "21: Torso", "22: Upper Clothing", "23: Lower Lip", "24: Upper Lip",
+  "25: Lower Teeth", "26: Upper Teeth", "27: Tongue",
+];
+
 export type ParamSpec =
   | { kind: "slider"; min: number; max: number; step: number; default: number; label: string }
   | { kind: "select"; options: string[]; default: string; label: string }
@@ -91,6 +102,40 @@ export const LAYER_DEFS: LayerDef[] = [
       strength: { kind: "slider", min: 0, max: 12, step: 0.1, default: 3, label: "Flow Strength" },
       decay: { kind: "slider", min: 0.5, max: 0.995, step: 0.005, default: 0.94, label: "Persistence" },
       region: { kind: "select", options: ["all", "inside", "outside"], default: "all", label: "Region" },
+    },
+  },
+  {
+    type: "body_parts",
+    label: "Body Parts (Sapiens)",
+    engine: "gl",
+    description: "Colorize or isolate Sapiens human-parsing parts (hair, face, torso…).",
+    sources: [{ key: "field", passTypes: ["body_parts"], required: true }],
+    params: {
+      mode: { kind: "select", options: ["colorize", "isolate"], default: "colorize", label: "Mode" },
+      partId: { kind: "select", options: GOLIATH_PART_OPTIONS, default: "3: Hair", label: "Isolate Part" },
+      color: { kind: "color", default: "#FF5A00", label: "Isolate Color" },
+      saturation: { kind: "slider", min: 0.2, max: 1, step: 0.05, default: 0.6, label: "Saturation" },
+    },
+  },
+  {
+    type: "sapiens_depth",
+    label: "Depth (Sapiens)",
+    engine: "gl",
+    description: "Human-centric depth as colormap, tint, or fog.",
+    sources: [{ key: "field", passTypes: ["depth"], required: true }],
+    params: {
+      mode: { kind: "select", options: ["colormap", "tint", "fog"], default: "colormap", label: "Mode" },
+      color: { kind: "color", default: "#2962FF", label: "Tint Color" },
+    },
+  },
+  {
+    type: "sapiens_normals",
+    label: "Surface Normals (Sapiens)",
+    engine: "gl",
+    description: "Surface normals as an RGB map or relief lighting.",
+    sources: [{ key: "field", passTypes: ["normals"], required: true }],
+    params: {
+      mode: { kind: "select", options: ["rgb", "relief"], default: "rgb", label: "Mode" },
     },
   },
   {
