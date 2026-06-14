@@ -65,6 +65,8 @@ export interface Job {
   progress: number;
   stage: string;
   error: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface ExportRecord {

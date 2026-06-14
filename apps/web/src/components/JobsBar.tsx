@@ -1,12 +1,22 @@
+import { useState } from "react";
 import { api } from "../api";
 import { useStore } from "../store";
+
+const FAIL_WINDOW_MS = 5 * 60 * 1000; // only nag about failures from the last 5 min
 
 export function JobsBar() {
   const jobs = useStore((s) => s.jobs);
   const error = useStore((s) => s.error);
   const setError = useStore((s) => s.setError);
+  const [dismissed, setDismissed] = useState<Set<string>>(new Set());
+
   const active = jobs.filter((j) => j.status === "queued" || j.status === "running");
-  const recentFailed = jobs.filter((j) => j.status === "failed").slice(0, 1);
+  const recentFailed = jobs.filter(
+    (j) =>
+      j.status === "failed" &&
+      !dismissed.has(j.id) &&
+      Date.now() - new Date(j.updatedAt).getTime() < FAIL_WINDOW_MS,
+  ).slice(0, 1);
 
   return (
     <div className="jobs-bar">
@@ -24,7 +34,10 @@ export function JobsBar() {
         </span>
       ))}
       {!active.length && !error && recentFailed.map((j) => (
-        <span key={j.id} className="job err">⚠ {j.type}: {j.error?.slice(0, 120)}</span>
+        <span key={j.id} className="job err" title="dismiss"
+              onClick={() => setDismissed((d) => new Set(d).add(j.id))}>
+          ⚠ {j.type}: {j.error?.slice(0, 120)} ✕
+        </span>
       ))}
       {!active.length && !error && !recentFailed.length && (
         <span className="job dim">IDLE</span>
