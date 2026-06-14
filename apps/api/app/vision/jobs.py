@@ -234,12 +234,15 @@ def run_landmarks(ctx):
         frames_meta = []
         detected = 0
         last = 0
+        frames_with = 0
         for idx, frame in _frames(asset):
             if ctx.cancelled:
                 passes.fail_pass(pass_id, "cancelled")
                 return None
             entities = process(frame, idx)
             detected += len(entities)
+            if entities:
+                frames_with += 1
             frames_meta.append({"frame": idx, "entities": entities})
             last = idx
             if idx % 15 == 0:
@@ -253,8 +256,10 @@ def run_landmarks(ctx):
             "connections": [list(c) for c in connections],
             "frames": frames_meta,
         })
+        noun = {"face": "faces", "pose": "poses", "hands": "hands"}[kind]
         passes.finish_pass(pass_id, data_key, 0, last,
-                           {"entities": detected, "frames": len(frames_meta)},
+                           {"seen in": f"{frames_with}/{len(frames_meta)} frames",
+                            noun: detected},
                            providers.mediapipe_version())
         return {"passId": pass_id}
     except Exception as exc:
