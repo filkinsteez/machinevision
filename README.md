@@ -44,8 +44,13 @@ cd apps/api
   masklet propagation (click/box/text prompts) and Grounding DINO open-vocabulary
   detection ("bird" finds birds), via HuggingFace transformers. Without CUDA the stub
   roster (GrabCut + CSRT, saliency detector) takes over automatically. MediaPipe
-  face/pose/hand landmarks, Farneback optical flow, ByteTrack tracking via
+  face/pose/hand landmarks (Tasks API), Farneback optical flow, ByteTrack tracking via
   Supervision, derived edge mattes — all real on CPU.
+- **Meta Sapiens** (GPU): human-centric foundation models — 28-class body-part
+  segmentation, depth, and surface normals (sapiens-0.3b torchscript). Body parts can
+  be colorized/isolated or derived into a mask (hair, torso, clothing…) that feeds the
+  datamosh / pixel-sort / edge-decay layers; depth renders as colormap/tint/fog;
+  normals as RGB or relief lighting.
   GPU extras: `uv pip install torch torchvision --index-url
   https://download.pytorch.org/whl/cu126` then `uv pip install transformers`
   (models download from HF Hub on first use, ~1.5 GB)
