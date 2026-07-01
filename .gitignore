@@ -6,3 +6,5 @@ node_modules/
 dist/
 *.pyc
 *.tsbuildinfo
+.env.local
+.env.*.local
