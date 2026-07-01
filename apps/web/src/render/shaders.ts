@@ -244,6 +244,31 @@ void main() {
   frag = composite(src, fx, present);
 }`,
 
+  depth_displace: COMMON + `
+uniform sampler2D u_field;
+uniform int u_hasField;
+uniform float u_strength;
+uniform int u_mode;   // 0 relief (gradient refraction), 1 parallax (shift by depth)
+void main() {
+  vec3 src = texture(u_src, v_uv).rgb;
+  if (u_hasField == 0) { frag = vec4(src, 1.0); return; }
+  vec2 e = 1.5 / u_res;
+  float d = texture(u_field, v_uv).r;
+  float present = d > 0.004 ? 1.0 : 0.0;
+  // audio energy adds a live push to the displacement amount
+  float amt = u_strength * (1.0 + u_level * 2.0 + u_beat * 1.5);
+  vec2 disp;
+  if (u_mode == 1) {
+    disp = vec2((d - 0.5) * amt * 0.15, 0.0);
+  } else {
+    float dx = texture(u_field, v_uv + vec2(e.x, 0.0)).r - texture(u_field, v_uv - vec2(e.x, 0.0)).r;
+    float dy = texture(u_field, v_uv + vec2(0.0, e.y)).r - texture(u_field, v_uv - vec2(0.0, e.y)).r;
+    disp = vec2(dx, dy) * amt * 0.5;
+  }
+  vec3 fx = texture(u_src, clamp(v_uv + disp * present, 0.0, 1.0)).rgb;
+  frag = composite(src, fx, present);
+}`,
+
   datamosh_preview: COMMON + `
 uniform sampler2D u_flow;
 uniform sampler2D u_prev;

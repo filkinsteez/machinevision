@@ -265,6 +265,10 @@ export class Compositor {
       case "sapiens_normals":
         this.u1i(prog, "u_mode", select("mode", ["rgb", "relief"]));
         break;
+      case "depth_displace":
+        this.u1i(prog, "u_mode", select("mode", ["relief", "parallax"]));
+        this.u1f(prog, "u_strength", Number(p.strength ?? 1));
+        break;
       case "datamosh_preview":
         this.u1f(prog, "u_strength", Number(p.strength ?? 0.85));
         this.u1f(prog, "u_decay", Number(p.decay ?? 0.96));

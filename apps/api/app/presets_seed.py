@@ -153,6 +153,72 @@ STARTERS = [
              "blend": {"mode": "normal", "opacity": 1.0}},
         ],
     },
+    {
+        "name": "Depth Relief",
+        "description": "Warp the image through the Sapiens depth field for a glassy, sculptural relief.",
+        "category": "composite",
+        "requiredPassTypes": ["depth"],
+        "renderLayers": [
+            {"type": "depth_displace", "name": "Depth Relief",
+             "sources": {"field": "$depth"},
+             "params": {"mode": "relief", "strength": 1.4},
+             "blend": {"mode": "normal", "opacity": 1.0}},
+        ],
+    },
+    {
+        "name": "Depth Fog",
+        "description": "Atmospheric human-centric depth — near stays lit, far falls into dark.",
+        "category": "composite",
+        "requiredPassTypes": ["depth"],
+        "renderLayers": [
+            {"type": "sapiens_depth", "name": "Depth Fog",
+             "sources": {"field": "$depth"},
+             "params": {"mode": "fog", "color": "#2962FF"},
+             "blend": {"mode": "normal", "opacity": 1.0}},
+            {"type": "metadata_typography", "name": "Frame Data",
+             "sources": {},
+             "params": {"fields": ["frame"], "anchor": "bottom-left", "fontSize": 11},
+             "blend": {"mode": "normal", "opacity": 0.8}},
+        ],
+    },
+    {
+        "name": "Surface Relief",
+        "description": "Sapiens surface normals as sculptural relief lighting.",
+        "category": "composite",
+        "requiredPassTypes": ["normals"],
+        "renderLayers": [
+            {"type": "sapiens_normals", "name": "Relief",
+             "sources": {"field": "$normals"},
+             "params": {"mode": "relief"},
+             "blend": {"mode": "normal", "opacity": 1.0}},
+        ],
+    },
+    {
+        "name": "Body Part Field",
+        "description": "Colorized 28-class human parsing — hair, skin, and clothing as flat fields.",
+        "category": "composite",
+        "requiredPassTypes": ["body_parts"],
+        "renderLayers": [
+            {"type": "body_parts", "name": "Body Parts",
+             "sources": {"field": "$body_parts"},
+             "params": {"mode": "colorize", "partId": "3: Hair", "color": "#FF5A00",
+                        "saturation": 0.7},
+             "blend": {"mode": "normal", "opacity": 0.85}},
+        ],
+    },
+    {
+        "name": "Isolate Hair",
+        "description": "Light up just the hair from Sapiens parsing.",
+        "category": "composite",
+        "requiredPassTypes": ["body_parts"],
+        "renderLayers": [
+            {"type": "body_parts", "name": "Hair",
+             "sources": {"field": "$body_parts"},
+             "params": {"mode": "isolate", "partId": "3: Hair", "color": "#00C853",
+                        "saturation": 0.6},
+             "blend": {"mode": "normal", "opacity": 1.0}},
+        ],
+    },
 ]
 
 

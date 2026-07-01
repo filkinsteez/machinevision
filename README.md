@@ -21,6 +21,10 @@ uv pip install --python .venv\Scripts\python.exe --force-reinstall opencv-contri
 .\.venv\Scripts\python.exe -m uvicorn app.main:app --port 8000
 ```
 
+If port 8000 is taken (e.g. by ComfyUI), run the API elsewhere and point the web
+dev server at it: `uvicorn app.main:app --port 8010` and set
+`VITE_API_TARGET=http://127.0.0.1:8010` before `npm run dev`.
+
 Frontend (Vite + React + WebGL2):
 
 ```powershell
@@ -49,8 +53,14 @@ cd apps/api
 - **Meta Sapiens** (GPU): human-centric foundation models — 28-class body-part
   segmentation, depth, and surface normals (sapiens-0.3b torchscript). Body parts can
   be colorized/isolated or derived into a mask (hair, torso, clothing…) that feeds the
-  datamosh / pixel-sort / edge-decay layers; depth renders as colormap/tint/fog;
-  normals as RGB or relief lighting.
+  datamosh / pixel-sort / edge-decay layers; depth renders as colormap/tint/fog, drives
+  a glassy **depth-displacement** relief/parallax layer; normals as RGB or relief lighting.
+  Curated Sapiens presets (Depth Relief, Depth Fog, Surface Relief, Body Part Field,
+  Isolate Hair).
+- **Audio-reactive mode**: the selected video's own audio drives the render — bass shakes
+  edges, energy boosts flow/ASCII, beats kick the datamosh, plus a level/beat pulse on the
+  final image. Live analyser for preview and a matching offline PCM pass so baked exports
+  react identically. Toggle with RX in the transport; tune in the AUDIO panel.
   GPU extras: `uv pip install torch torchvision --index-url
   https://download.pytorch.org/whl/cu126` then `uv pip install transformers`
   (models download from HF Hub on first use, ~1.5 GB)

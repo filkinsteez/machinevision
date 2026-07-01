@@ -139,6 +139,17 @@ export const LAYER_DEFS: LayerDef[] = [
     },
   },
   {
+    type: "depth_displace",
+    label: "Depth Displace (Sapiens)",
+    engine: "gl",
+    description: "Warp the image by the depth field — glassy relief or parallax. Reacts to audio.",
+    sources: [{ key: "field", passTypes: ["depth"], required: true }],
+    params: {
+      mode: { kind: "select", options: ["relief", "parallax"], default: "relief", label: "Mode" },
+      strength: { kind: "slider", min: 0, max: 4, step: 0.05, default: 1, label: "Strength" },
+    },
+  },
+  {
     type: "datamosh_preview",
     label: "Datamosh (Preview)",
     engine: "gl",
