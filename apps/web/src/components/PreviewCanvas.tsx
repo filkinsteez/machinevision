@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Compositor } from "../render/compositor";
 import { drawOverlays } from "../render/overlay";
 import { bakeExport } from "../render/bake";
+import { analyzeAudioOffline, audioEngine, ZERO_AUDIO, type AudioFrame } from "../render/audio";
 import { useStore } from "../store";
 import type { RenderLayer, VisionPass } from "../types";
 
@@ -20,7 +21,7 @@ export const previewController: {
     if (v) v.currentTime = Math.min((frame + 0.5) / fps, Math.max(v.duration - 0.001, 0));
     useStore.getState().setFrame(frame);
   },
-  play() { this.video?.play(); useStore.getState().setPlaying(true); },
+  play() { audioEngine.resume(); this.video?.play(); useStore.getState().setPlaying(true); },
   pause() { this.video?.pause(); useStore.getState().setPlaying(false); },
 };
 
@@ -92,6 +93,8 @@ export function PreviewCanvas() {
       videoRef.current = v;
       previewController.video = v;
       (window as { __mvVideo?: HTMLVideoElement }).__mvVideo = v;
+      (window as { __mvAudio?: typeof audioEngine }).__mvAudio = audioEngine;
+      audioEngine.attach(v);
       v.addEventListener("ended", () => useStore.getState().setPlaying(false));
     } else {
       fetch(asset.proxyUrl).then((r) => r.blob()).then(createImageBitmap)
@@ -126,8 +129,11 @@ export function PreviewCanvas() {
         ? passVizLayer(s.passes.find((p) => p.id === s.visiblePassId) as VisionPass)
         : null;
       if (viz) layers.push(viz);
+      const audioCfg = s.audioConfig();
+      const audio: AudioFrame =
+        audioCfg.enabled && a.type === "video" ? audioEngine.sample(audioCfg) : ZERO_AUDIO;
       try {
-        comp.render(source, layers, frame, v ?? undefined);
+        comp.render(source, layers, frame, v ?? undefined, audio);
       } catch (e) { console.error(e); }
       const octx = ovRef.current?.getContext("2d");
       if (octx && ovRef.current) {
@@ -148,10 +154,17 @@ export function PreviewCanvas() {
       previewController.pause();
       s.setBaking({ active: true, progress: 0 });
       try {
+        const audioCfg = s.audioConfig();
+        let audioFrames: AudioFrame[] | undefined;
+        if (audioCfg.enabled && a.type === "video" && a.proxyUrl) {
+          const fps = a.fps ?? 30;
+          const frameCount = a.frameCount ?? 1;
+          audioFrames = await analyzeAudioOffline(a.proxyUrl, fps, frameCount, audioCfg);
+        }
         await bakeExport({
           asset: a, projectId: s.project.id, video: videoRef.current,
           imageBitmap: imageRef.current, compositor: compRef.current,
-          layers: s.project.renderLayers, passes: s.passes,
+          layers: s.project.renderLayers, passes: s.passes, audioFrames,
           onProgress: (f) => useStore.getState().setBaking({ active: true, progress: f }),
         });
         await s.refresh();

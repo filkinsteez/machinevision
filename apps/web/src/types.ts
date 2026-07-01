@@ -7,6 +7,17 @@ export interface Project {
   createdAt: string;
 }
 
+/** Global audio-reactive mode configuration, stored in Project.settings.audioReactive. */
+export interface AudioReactiveConfig {
+  enabled: boolean;
+  sensitivity: number; // master multiplier on all bands
+  smoothing: number;    // 0..1, higher = smoother / slower response
+  bassGain: number;
+  midGain: number;
+  trebleGain: number;
+  beatAmount: number;   // scales the transient/beat envelope
+}
+
 export interface Asset {
   id: string;
   projectId: string;

@@ -7,6 +7,8 @@ export function Timeline() {
   const playing = useStore((s) => s.playing);
   const muted = useStore((s) => s.muted);
   const setMuted = useStore((s) => s.setMuted);
+  const audioEnabled = useStore((s) => s.audioConfig().enabled);
+  const setAudioReactive = useStore((s) => s.setAudioReactive);
   if (!asset || asset.status !== "ready") return <div className="timeline" />;
   const frameCount = asset.frameCount ?? 1;
   const isVideo = asset.type === "video";
@@ -33,6 +35,12 @@ export function Timeline() {
             if (previewController.video) previewController.video.muted = next;
           }}
         >{muted ? "MUTE" : "SND"}</button>
+        <button
+          className={audioEnabled ? "active" : ""}
+          disabled={!isVideo}
+          title="toggle audio-reactive mode"
+          onClick={() => setAudioReactive({ enabled: !audioEnabled })}
+        >RX</button>
       </div>
       <input
         type="range"

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { AudioPanel } from "./components/AudioPanel";
 import { ExportPanel } from "./components/ExportPanel";
 import { JobsBar } from "./components/JobsBar";
 import { LayersPanel } from "./components/LayersPanel";
@@ -10,7 +11,7 @@ import { PreviewCanvas } from "./components/PreviewCanvas";
 import { Timeline } from "./components/Timeline";
 import { useStore } from "./store";
 
-type RightTab = "layer" | "export";
+type RightTab = "layer" | "audio" | "export";
 type LeftTab = "passes" | "presets";
 
 export default function App() {
@@ -62,9 +63,10 @@ export default function App() {
           <LayersPanel />
           <div className="tabs">
             <button className={rightTab === "layer" ? "active" : ""} onClick={() => setRightTab("layer")}>CONTROLS</button>
+            <button className={rightTab === "audio" ? "active" : ""} onClick={() => setRightTab("audio")}>AUDIO</button>
             <button className={rightTab === "export" ? "active" : ""} onClick={() => setRightTab("export")}>EXPORT</button>
           </div>
-          {rightTab === "layer" ? <ParamsPanel /> : <ExportPanel />}
+          {rightTab === "layer" ? <ParamsPanel /> : rightTab === "audio" ? <AudioPanel /> : <ExportPanel />}
         </aside>
       </div>
     </div>

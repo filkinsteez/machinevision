@@ -2,6 +2,7 @@
  * PNGs to a server frame session, finalize into a video (or single image). */
 import { api } from "../api";
 import type { Asset, RenderLayer, VisionPass } from "../types";
+import type { AudioFrame } from "./audio";
 import type { Compositor } from "./compositor";
 import { drawOverlays } from "./overlay";
 
@@ -13,9 +14,10 @@ export async function bakeExport(opts: {
   compositor: Compositor;
   layers: RenderLayer[];
   passes: VisionPass[];
+  audioFrames?: AudioFrame[];
   onProgress: (f: number) => void;
 }): Promise<void> {
-  const { asset, projectId, video, imageBitmap, compositor, layers, passes, onProgress } = opts;
+  const { asset, projectId, video, imageBitmap, compositor, layers, passes, audioFrames, onProgress } = opts;
   const w = compositor.width;
   const h = compositor.height;
   const out = document.createElement("canvas");
@@ -49,7 +51,7 @@ export async function bakeExport(opts: {
     if (!source) throw new Error("no frame source");
     // wait for mask/flow textures to be available for this frame (best effort)
     await new Promise((r) => setTimeout(r, f === 0 ? 200 : 0));
-    compositor.render(source, layers, f, video ?? undefined);
+    compositor.render(source, layers, f, video ?? undefined, audioFrames?.[f]);
     drawOverlays(octx, layers, passes, f, w, h);
     ctx.drawImage(compositor.canvas, 0, 0);
     ctx.drawImage(overlayCanvas, 0, 0);

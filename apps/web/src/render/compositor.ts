@@ -2,6 +2,7 @@
  * for stateful effects (flow smear, datamosh preview), CPU pixel-sort results
  * injected as textures. */
 import type { RenderLayer } from "../types";
+import { ZERO_AUDIO, type AudioFrame } from "./audio";
 import { compileProgram, createTarget, createTexture, hexToRgb, uploadImage, type Target } from "./gl";
 import { getFieldBitmap, getFlowFrame, getMaskBitmap } from "./passData";
 import { buildGlyphAtlas, SHADERS } from "./shaders";
@@ -76,8 +77,17 @@ export class Compositor {
     if (loc) this.gl.uniform3f(loc, v[0], v[1], v[2]);
   }
 
+  private setAudioUniforms(prog: WebGLProgram, audio?: AudioFrame) {
+    const aud = audio ?? ZERO_AUDIO;
+    this.u1f(prog, "u_bass", aud.bass);
+    this.u1f(prog, "u_mid", aud.mid);
+    this.u1f(prog, "u_treble", aud.treble);
+    this.u1f(prog, "u_level", aud.level);
+    this.u1f(prog, "u_beat", aud.beat);
+  }
+
   /** Renders the layer stack for the current frame. */
-  render(source: TexImageSource, layers: RenderLayer[], frame: number, videoEl?: HTMLVideoElement) {
+  render(source: TexImageSource, layers: RenderLayer[], frame: number, videoEl?: HTMLVideoElement, audio?: AudioFrame) {
     const gl = this.gl;
     uploadImage(gl, this.srcTex, source);
     uploadImage(gl, this.origTex, source);
@@ -180,6 +190,7 @@ export class Compositor {
       this.u1f(prog, "u_seed", Number(layer.params.seed ?? 0));
       this.u1f(prog, "u_opacity", layer.blend.opacity);
       this.u1i(prog, "u_blend", BLEND_MODES[layer.blend.mode] ?? 0);
+      this.setAudioUniforms(prog, audio);
       this.setLayerParams(prog, layer);
 
       gl.drawArrays(gl.TRIANGLES, 0, 3);
@@ -204,6 +215,10 @@ export class Compositor {
     const blit = this.programs.get("copy_flip")!;
     gl.useProgram(blit);
     this.bindTex(blit, "u_src", 0, input);
+    const glres = gl.getUniformLocation(blit, "u_res");
+    if (glres) gl.uniform2f(glres, this.width, this.height);
+    this.u1f(blit, "u_frame", frame);
+    this.setAudioUniforms(blit, audio);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
   }
 

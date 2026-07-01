@@ -20,6 +20,11 @@ uniform float u_seed;
 uniform float u_opacity;
 uniform int u_blend;
 uniform int u_hasMask;
+uniform float u_bass;   // 0..1 low band
+uniform float u_mid;    // 0..1 mid band
+uniform float u_treble; // 0..1 high band
+uniform float u_level;  // 0..1 overall energy
+uniform float u_beat;   // 0..1 transient envelope
 
 float hash(vec3 p) {
   p = fract(p * 0.3183099 + vec3(0.1, 0.2, 0.3));
@@ -44,7 +49,16 @@ void main() { frag = texture(u_src, v_uv); }`,
 
   // final on-screen blit: GL's bottom-left origin vs image top-left needs one flip
   copy_flip: COMMON + `
-void main() { frag = texture(u_src, vec2(v_uv.x, 1.0 - v_uv.y)); }`,
+void main() {
+  vec3 c = texture(u_src, vec2(v_uv.x, 1.0 - v_uv.y)).rgb;
+  float pulse = u_level * 0.18 + u_beat * 0.20;
+  vec2 center = v_uv - 0.5;
+  float vignette = 1.0 - smoothstep(0.18, 0.72, length(center));
+  c *= 1.0 + pulse * (0.45 + vignette * 0.55);
+  c.r += u_bass * 0.035;
+  c.b += u_treble * 0.035;
+  frag = vec4(clamp(c, 0.0, 1.0), 1.0);
+}`,
 
   matte_view: COMMON + `
 uniform vec3 u_color;
@@ -58,7 +72,7 @@ void main() {
   vec3 fx;
   if (u_mode == 1) fx = vec3(m);
   else if (u_mode == 2) fx = src * m;
-  else fx = mix(src, u_color, m * u_amount);
+  else fx = mix(src, u_color, m * clamp(u_amount * (1.0 + u_level * 2.5 + u_beat), 0.0, 1.0));
   frag = composite(src, fx, 1.0);
 }`,
 
@@ -79,9 +93,10 @@ float edgeBand(vec2 uv, float w) {
 }
 void main() {
   vec3 src = texture(u_src, v_uv).rgb;
+  float jitter = u_jitter * (1.0 + u_bass * 4.0 + u_beat * 2.0);
   vec2 juv = v_uv + (vec2(hash(vec3(v_uv * 31.0, u_seed + u_frame)),
                           hash(vec3(v_uv * 47.0, u_seed + u_frame + 9.0))) - 0.5)
-                    * u_jitter * u_edgeWidth * 2.0;
+                    * jitter * u_edgeWidth * 2.0;
   float e = edgeBand(juv, u_edgeWidth);
   vec3 fx;
   if (u_mode == 1) { // rot: displace source inside the band
@@ -113,8 +128,10 @@ void main() {
   vec2 cellId = floor(v_uv * cells);
   vec2 cellUV = (cellId + 0.5) / cells;
   vec3 c = texture(u_src, cellUV).rgb;
-  float luma = clamp(dot(c, vec3(0.299, 0.587, 0.114)) * u_contrast, 0.0, 1.0);
-  luma += (hash(vec3(cellId, u_seed + u_frame)) - 0.5) * u_flicker * 2.0;
+  float contrast = u_contrast * (1.0 + u_level * 1.5);
+  float flicker = u_flicker + u_treble * 0.9 + u_beat * 0.35;
+  float luma = clamp(dot(c, vec3(0.299, 0.587, 0.114)) * contrast, 0.0, 1.0);
+  luma += (hash(vec3(cellId, u_seed + u_frame)) - 0.5) * flicker * 2.0;
   float gi = clamp(floor(luma * u_nGlyphs), 0.0, u_nGlyphs - 1.0);
   vec2 inCell = fract(v_uv * cells);
   float g = texture(u_atlas, vec2((gi + inCell.x) / u_nGlyphs, inCell.y)).r;
@@ -145,7 +162,7 @@ uniform int u_region;
 void main() {
   vec3 src = texture(u_src, v_uv).rgb;
   vec2 f = (texture(u_flow, v_uv).rg * 2.0 - 1.0) * u_flowScale;
-  vec2 disp = f * u_strength / u_res;
+  vec2 disp = f * (u_strength * (1.0 + u_level * 4.0 + u_beat * 1.5)) / u_res;
   vec3 prev = texture(u_prev, clamp(v_uv - disp, 0.0, 1.0)).rgb;
   float m = maskAt(v_uv);
   float region = u_region == 0 ? 1.0 : (u_region == 1 ? m : 1.0 - m);
@@ -253,7 +270,8 @@ void main() {
   }
   m = max(m, leak * 0.6);
   if (u_mode == 1) m = 1.0 - m;
-  vec3 fx = mix(src, prev, u_decay * m * u_strength);
+  float strength = clamp(u_strength + u_beat * 0.9 + u_bass * 0.25, 0.0, 1.0);
+  vec3 fx = mix(src, prev, u_decay * m * strength);
   frag = composite(src, fx, 1.0);
 }`,
 };

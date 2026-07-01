@@ -1,7 +1,8 @@
 import { create } from "zustand";
 import { layerDef, newLayer, uniqueId } from "./layers";
 import { api } from "./api";
-import type { Asset, ExportRecord, Job, Preset, Project, PromptPoint, RenderLayer, VisionPass } from "./types";
+import { DEFAULT_AUDIO_CONFIG } from "./render/audio";
+import type { AudioReactiveConfig, Asset, ExportRecord, Job, Preset, Project, PromptPoint, RenderLayer, VisionPass } from "./types";
 
 export type Tool = "select" | "click-prompt" | "box-prompt";
 
@@ -52,6 +53,9 @@ interface State {
   selectLayer: (id: string | null) => void;
   applyPreset: (preset: Preset) => void;
 
+  audioConfig: () => AudioReactiveConfig;
+  setAudioReactive: (patch: Partial<AudioReactiveConfig>) => void;
+
   setPlaying: (p: boolean) => void;
   setFrame: (f: number) => void;
   setMuted: (m: boolean) => void;
@@ -63,7 +67,10 @@ let saveTimer: number | undefined;
 function debouncedSave(project: Project) {
   window.clearTimeout(saveTimer);
   saveTimer = window.setTimeout(() => {
-    api.patchProject(project.id, { renderLayers: project.renderLayers }).catch(console.error);
+    api.patchProject(project.id, {
+      renderLayers: project.renderLayers,
+      settings: project.settings,
+    }).catch(console.error);
   }, 600);
 }
 
@@ -306,6 +313,22 @@ export const useStore = create<State>((set, get) => ({
       sources: Object.fromEntries(Object.entries(l.sources).map(([k, v]) => [k, resolve(v)])),
     }));
     get().setLayers([...get().layers(), ...newLayers]);
+  },
+
+  audioConfig: () => {
+    const raw = (get().project?.settings?.audioReactive ?? {}) as Partial<AudioReactiveConfig>;
+    return { ...DEFAULT_AUDIO_CONFIG, ...raw };
+  },
+
+  setAudioReactive: (patch) => {
+    const project = get().project;
+    if (!project) return;
+    const next: Project = {
+      ...project,
+      settings: { ...project.settings, audioReactive: { ...get().audioConfig(), ...patch } },
+    };
+    set({ project: next });
+    debouncedSave(next);
   },
 
   setPlaying: (playing) => set({ playing }),

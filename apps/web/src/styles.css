@@ -221,3 +221,9 @@ input[type="number"].seed { width: 72px; }
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-thumb { background: var(--line); }
 ::-webkit-scrollbar-track { background: transparent; }
+
+/* audio-reactive meters */
+.meter { display: flex; align-items: center; gap: 8px; margin: 3px 0; }
+.meter-label { width: 34px; font-size: 9px; letter-spacing: 0.12em; color: var(--dim); }
+.meter-track { flex: 1; height: 6px; background: var(--bg); border: 1px solid var(--line); border-radius: 2px; overflow: hidden; }
+.meter-fill { height: 100%; background: var(--orange); transition: width 0.05s linear; }
