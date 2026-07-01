@@ -11,7 +11,8 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [react()],
     server: {
-      port: 5173,
+      // honor a harness-assigned PORT (preview_start autoPort); default 5173
+      port: process.env.PORT ? Number(process.env.PORT) : 5173,
       proxy: {
         "/api": target,
         "/storage": target,
