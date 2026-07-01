@@ -52,6 +52,7 @@ interface State {
   updateLayer: (id: string, patch: Partial<RenderLayer>) => void;
   selectLayer: (id: string | null) => void;
   applyPreset: (preset: Preset) => void;
+  applyPresetAuto: (preset: Preset) => Promise<void>;
 
   audioConfig: () => AudioReactiveConfig;
   setAudioReactive: (patch: Partial<AudioReactiveConfig>) => void;
@@ -313,6 +314,33 @@ export const useStore = create<State>((set, get) => ({
       sources: Object.fromEntries(Object.entries(l.sources).map(([k, v]) => [k, resolve(v)])),
     }));
     get().setLayers([...get().layers(), ...newLayers]);
+  },
+
+  applyPresetAuto: async (preset) => {
+    const assetId = get().selectedAssetId;
+    if (!assetId) return;
+    const readyTypes = () => new Set(get().passes
+      .filter((p) => p.assetId === assetId && p.status === "ready").map((p) => p.type));
+    const missing = preset.requiredPassTypes.filter((t) => !readyTypes().has(t));
+    // fire off the generator for each missing pass type (mask uses a zero-click text prompt)
+    for (const t of missing) {
+      if (t === "mask") await get().runSegmentText("the subject");
+      else if (t === "optical_flow") await get().runFlow();
+      else if (t === "depth" || t === "normals" || t === "body_parts") await get().runSapiens(t);
+      else if (t === "face_landmarks") await get().runLandmarks("face");
+      else if (t === "pose_landmarks") await get().runLandmarks("pose");
+      else if (t === "hand_landmarks") await get().runLandmarks("hands");
+      else if (t === "detection") await get().runDetect("the subject", 0.35);
+    }
+    // poll until every required pass is ready (or give up), then apply
+    const deadline = Date.now() + 180000;
+    while (Date.now() < deadline) {
+      const have = readyTypes();
+      if (preset.requiredPassTypes.every((t) => have.has(t))) break;
+      await new Promise((r) => setTimeout(r, 1500));
+      await get().refresh();
+    }
+    get().applyPreset(preset);
   },
 
   audioConfig: () => {

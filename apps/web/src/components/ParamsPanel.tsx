@@ -1,7 +1,23 @@
 import { useShallow } from "zustand/react/shallow";
-import { layerDef, type ParamSpec } from "../layers";
+import { layerDef, type LayerDef, type ParamSpec } from "../layers";
 import { useStore } from "../store";
-import type { RenderLayer } from "../types";
+import type { PassType, RenderLayer } from "../types";
+
+// human-readable names for pass types and layer input slots
+const PASS_TYPE_LABEL: Record<string, string> = {
+  mask: "mask", edge_matte: "edge outline", optical_flow: "motion",
+  face_landmarks: "landmarks", pose_landmarks: "landmarks", hand_landmarks: "landmarks",
+  detection: "detections", depth: "depth", normals: "surface normals", body_parts: "body parts",
+};
+
+function passTypesLabel(types: PassType[]): string {
+  const uniq = [...new Set(types.map((t) => PASS_TYPE_LABEL[t] ?? t))];
+  return uniq.join(" / ");
+}
+
+function sourceLabel(src: LayerDef["sources"][number]): string {
+  return passTypesLabel(src.passTypes);
+}
 
 function ParamControl({ name, spec, layer }: { name: string; spec: ParamSpec; layer: RenderLayer }) {
   const updateLayer = useStore((s) => s.updateLayer);
@@ -84,27 +100,42 @@ export function ParamsPanel() {
   const def = layerDef(layer.type);
   if (!def) return null;
 
+  // which required inputs aren't wired up yet — the layer draws nothing until they are
+  const missing = def.sources.filter((s) => s.required && !layer.sources[s.key]);
+
   return (
     <section className="panel grow scroll">
       <h3>{def.label.toUpperCase()}</h3>
       <div className="dim desc">{def.description}</div>
 
+      {missing.length > 0 && (
+        <div className="warn-banner">
+          ⚠ Not rendering yet — connect a {missing.map((m) => sourceLabel(m)).join(" and ")} below.
+        </div>
+      )}
+
       <div className="param-group">
-        <span className="group-label">PASS ROUTING</span>
+        <span className="group-label">INPUT (which pass feeds this layer)</span>
         {def.sources.map((src) => {
           const candidates = passes.filter((p) => src.passTypes.includes(p.type));
+          const need = passTypesLabel(src.passTypes);
+          const unrouted = src.required && !layer.sources[src.key];
           return (
-            <label className="param row" key={src.key}>
-              <span>{src.key}{src.required ? " *" : ""}</span>
-              <select
-                value={layer.sources[src.key] ?? ""}
-                onChange={(e) => updateLayer(layer.id, {
-                  sources: { ...layer.sources, [src.key]: e.target.value || null },
-                })}
-              >
-                <option value="">— none —</option>
-                {candidates.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-              </select>
+            <label className={`param row ${unrouted ? "needs" : ""}`} key={src.key}>
+              <span>{sourceLabel(src)}{src.required ? " *" : ""}</span>
+              {candidates.length === 0 ? (
+                <span className="dim need-pass">— make a {need} pass first —</span>
+              ) : (
+                <select
+                  value={layer.sources[src.key] ?? ""}
+                  onChange={(e) => updateLayer(layer.id, {
+                    sources: { ...layer.sources, [src.key]: e.target.value || null },
+                  })}
+                >
+                  <option value="">— none —</option>
+                  {candidates.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </select>
+              )}
             </label>
           );
         })}

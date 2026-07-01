@@ -62,11 +62,14 @@ export function AudioPanel() {
       </div>
 
       <label className="param row">
-        <span>Enabled</span>
+        <span>Enabled <span className="dim">(same as REACT in the transport)</span></span>
         <input type="checkbox" checked={cfg.enabled} onChange={(e) => set({ enabled: e.target.checked })} />
       </label>
 
-      {!isVideo && <div className="dim empty">select a video asset to react to audio</div>}
+      {!isVideo && <div className="dim empty">Select a video with sound to react to audio.</div>}
+      {isVideo && cfg.enabled && (
+        <div className="hint dim">Effects react while the video plays with sound. Press PLAY and un-mute if the meters are flat.</div>
+      )}
 
       <div className="param-group">
         <span className="group-label">LIVE LEVELS</span>

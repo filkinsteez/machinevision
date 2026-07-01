@@ -163,7 +163,7 @@ export const LAYER_DEFS: LayerDef[] = [
       strength: { kind: "slider", min: 0, max: 1, step: 0.01, default: 0.85, label: "Strength" },
       decay: { kind: "slider", min: 0.8, max: 0.999, step: 0.001, default: 0.96, label: "Persistence" },
       blockSize: { kind: "slider", min: 2, max: 48, step: 1, default: 12, label: "Block Size" },
-      edgeLeak: { kind: "slider", min: 0, max: 1, step: 0.01, default: 0.3, label: "Edge Leak" },
+      edgeLeak: { kind: "slider", min: 0, max: 1, step: 0.01, default: 0.3, label: "Edge Bleed" },
       seed: { kind: "seed", default: 1234, label: "Seed" },
     },
   },

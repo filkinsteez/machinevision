@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { api } from "../api";
-import { layerDef } from "../layers";
 import { useStore } from "../store";
 
 export function ExportPanel() {
@@ -16,11 +15,15 @@ export function ExportPanel() {
   const [moshParams, setMoshParams] = useState({
     mode: "subject", strength: 0.9, keyframeDistance: 15, dupEvery: 30, dupCount: 2, seed: 1234,
   });
+  const [showMosh, setShowMosh] = useState(false);
 
   const maskPasses = passes.filter((p) => p.type === "mask" || p.type === "edge_matte");
   const [moshMask, setMoshMask] = useState("");
   const moshLayer = layers.find((l) => l.type === "datamosh_preview" && l.enabled);
   const effectiveMask = moshMask || moshLayer?.sources.mask || maskPasses[0]?.id || "";
+  const isVideo = asset?.type === "video";
+  const moshReady = !!effectiveMask && isVideo;
+  const moshReason = !isVideo ? "Video only." : !maskPasses.length ? "Needs a mask pass — make one in Analyze." : "";
 
   const runFinal = async () => {
     if (!project || !asset || !effectiveMask) return;
@@ -41,64 +44,80 @@ export function ExportPanel() {
     } catch (e) { setError(String(e)); }
   };
 
+  const bakeFrames = baking && asset?.frameCount
+    ? `frame ${Math.round(baking.progress * asset.frameCount)} / ${asset.frameCount}` : "";
+
   return (
     <section className="panel grow scroll">
-      <h3>EXPORT</h3>
+      <h3>3 · EXPORT</h3>
 
+      {/* PRIMARY: export exactly what the preview shows */}
       <div className="param-group">
-        <span className="group-label">FINAL RENDER · CODEC DATAMOSH</span>
-        <div className="dim desc">
-          Server-side authentic mosh: real MPEG-4 packet surgery composited through the mask.
-          {moshLayer ? " Using your Datamosh layer's mode/strength/seed." : ""}
-        </div>
-        <label className="param row">
-          <span>mask</span>
-          <select value={effectiveMask} onChange={(e) => setMoshMask(e.target.value)}>
-            {maskPasses.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-            {!maskPasses.length && <option value="">— generate a mask first —</option>}
-          </select>
-        </label>
-        {!moshLayer && (
-          <label className="param row">
-            <span>mode</span>
-            <select value={moshParams.mode}
-                    onChange={(e) => setMoshParams({ ...moshParams, mode: e.target.value })}>
-              <option>subject</option><option>background</option>
-            </select>
-          </label>
-        )}
-        <label className="param">
-          <span>GOP / keyframe distance<em>{moshParams.keyframeDistance}</em></span>
-          <input type="range" min={2} max={120} value={moshParams.keyframeDistance}
-                 onChange={(e) => setMoshParams({ ...moshParams, keyframeDistance: Number(e.target.value) })} />
-        </label>
-        <label className="param">
-          <span>P-frame bloom every<em>{moshParams.dupEvery || "off"}</em></span>
-          <input type="range" min={0} max={90} value={moshParams.dupEvery}
-                 onChange={(e) => setMoshParams({ ...moshParams, dupEvery: Number(e.target.value) })} />
-        </label>
-        <button className="go wide" disabled={!effectiveMask || asset?.type !== "video"} onClick={runFinal}>
-          RENDER FINAL (CODEC ENGINE)
-        </button>
-      </div>
-
-      <div className="param-group">
-        <span className="group-label">BAKE PREVIEW ENGINE</span>
-        <div className="dim desc">Renders every frame through the browser preview stack, encoded server-side. Frame-accurate.</div>
+        <span className="group-label">EXPORT VIDEO</span>
+        <div className="dim desc">Renders your layer stack exactly as shown in the preview, frame by frame.</div>
         <button
           className="go wide"
           disabled={!asset || asset.status !== "ready" || !!baking || !layers.length}
           onClick={() => window.dispatchEvent(new Event("mv-bake"))}
+          title={!layers.length ? "Add a render layer first" : "Export the composition as shown"}
         >
-          {baking ? `BAKING ${(baking.progress * 100).toFixed(0)}%` : `BAKE ${asset?.type === "video" ? "VIDEO" : "IMAGE"} (PREVIEW ENGINE)`}
+          {baking ? `BAKING… ${(baking.progress * 100).toFixed(0)}%`
+            : `EXPORT ${isVideo ? "VIDEO" : "IMAGE"}`}
         </button>
+        {baking && <div className="dim desc">{bakeFrames || "encoding…"}</div>}
+        {!layers.length && !baking && <div className="hint dim">Add a render layer first (right panel or a preset).</div>}
+      </div>
+
+      {/* ADVANCED: authentic codec datamosh */}
+      <div className="param-group">
+        <span className="group-label">
+          AUTHENTIC DATAMOSH · ADVANCED
+          <button className="add" onClick={() => setShowMosh(!showMosh)}>{showMosh ? "×" : "OPEN"}</button>
+        </span>
+        <div className="dim desc">Real MPEG-4 codec corruption composited through a mask. Slower, glitchier, video only.</div>
+        {showMosh && (
+          <>
+            <label className="param row">
+              <span>mask</span>
+              <select value={effectiveMask} onChange={(e) => setMoshMask(e.target.value)}>
+                {maskPasses.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                {!maskPasses.length && <option value="">— make a mask first —</option>}
+              </select>
+            </label>
+            {!moshLayer && (
+              <label className="param row">
+                <span>region</span>
+                <select value={moshParams.mode}
+                        onChange={(e) => setMoshParams({ ...moshParams, mode: e.target.value })}>
+                  <option value="subject">subject</option><option value="background">background</option>
+                </select>
+              </label>
+            )}
+            <label className="param">
+              <span>Mosh length<em>{moshParams.keyframeDistance}</em></span>
+              <input type="range" min={2} max={120} value={moshParams.keyframeDistance}
+                     title="How long the mosh runs before the picture snaps back. Higher = longer melt."
+                     onChange={(e) => setMoshParams({ ...moshParams, keyframeDistance: Number(e.target.value) })} />
+            </label>
+            <label className="param">
+              <span>Motion bloom every<em>{moshParams.dupEvery || "off"}</em></span>
+              <input type="range" min={0} max={90} value={moshParams.dupEvery}
+                     title="Repeat motion frames to smear the image — the classic datamosh bloom. 0 = off."
+                     onChange={(e) => setMoshParams({ ...moshParams, dupEvery: Number(e.target.value) })} />
+            </label>
+            <button className="go wide" disabled={!moshReady} onClick={runFinal}>
+              RENDER DATAMOSH
+            </button>
+            {!moshReady && <div className="hint dim">{moshReason}</div>}
+          </>
+        )}
       </div>
 
       <div className="param-group">
-        <span className="group-label">PASSES & DATA</span>
+        <span className="group-label">PASSES &amp; DATA</span>
         <div className="seg-tools wrap">
           {maskPasses.map((p) => (
-            <button key={p.id} onClick={async () => {
+            <button key={p.id} title="Export this mask as a PNG sequence (zip)" onClick={async () => {
               if (!project) return;
               await api.createExport(project.id, "mask_sequence", p.id);
               refresh();
@@ -106,13 +125,13 @@ export function ExportPanel() {
               {p.type === "mask" ? "MASKS" : "EDGES"} ZIP
             </button>
           ))}
-          <button onClick={async () => {
+          <button title="Export all pass data as JSON" onClick={async () => {
             if (!project) return;
             await api.createExport(project.id, "metadata");
             refresh();
           }}>METADATA JSON</button>
           {project && (
-            <a className="btn" href={`/api/projects/${project.id}/export-json`} download={`${project.name}.machinevision.json`}>
+            <a className="btn" title="Save the whole project as JSON" href={`/api/projects/${project.id}/export-json`} download={`${project.name}.machineindustries.json`}>
               PROJECT JSON
             </a>
           )}
@@ -120,20 +139,17 @@ export function ExportPanel() {
       </div>
 
       <div className="param-group">
-        <span className="group-label">OUTPUTS</span>
+        <span className="group-label">DOWNLOADS</span>
         <ul className="export-list">
           {exportsList.map((e) => (
             <li key={e.id}>
               <span className="tag">{e.type === "baked_video" ? "VID" : e.type === "datamosh_pass" ? "MSH" : e.type === "mask_sequence" ? "ZIP" : e.type === "baked_image" ? "IMG" : "DAT"}</span>
-              <span className="grow dim">{e.status === "ready" ? e.type : `${e.type} · ${e.status}`}</span>
-              {e.outputUrl && <a className="btn" href={e.outputUrl} download>↓</a>}
+              <span className="grow dim">{e.status === "ready" ? e.type.replace(/_/g, " ") : `${e.type.replace(/_/g, " ")} · ${e.status}`}</span>
+              {e.outputUrl && <a className="btn" title="download" href={e.outputUrl} download>↓</a>}
             </li>
           ))}
           {!exportsList.length && <li className="dim empty">nothing exported yet</li>}
         </ul>
-      </div>
-      <div className="dim desc">
-        Layer engines: {layers.map((l) => `${l.name}→${layerDef(l.type)?.engine ?? "?"}`).join("  ") || "—"}
       </div>
     </section>
   );

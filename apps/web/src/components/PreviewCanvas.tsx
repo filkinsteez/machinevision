@@ -227,10 +227,21 @@ export function PreviewCanvas() {
   const onPointerUp = () => { boxDrag.current = null; };
 
   if (!asset) {
-    return <div className="preview-empty">UPLOAD MEDIA TO BEGIN<span className="dim">drag a file into the media panel</span></div>;
+    return (
+      <div className="preview-empty">
+        <div className="onboard-title">MACHINE INDUSTRIES</div>
+        <div className="onboard-sub">Render what the machine sees.</div>
+        <ol className="onboard-steps">
+          <li><b>1 · Upload</b> an image or video (drop it in the Media panel, left)</li>
+          <li><b>2 · Analyze</b> — run a pass: mask, pose, depth, motion…</li>
+          <li><b>3 · Add a layer</b> that reads the pass, tune it, and export</li>
+        </ol>
+        <div className="onboard-tip dim">New here? Open <b>PRESETS ★</b> — one click generates everything and builds the look.</div>
+      </div>
+    );
   }
   if (asset.status === "ingesting") {
-    return <div className="preview-empty">INGESTING<span className="dim">{asset.name}</span></div>;
+    return <div className="preview-empty">PROCESSING UPLOAD…<span className="dim">{asset.name} · analyzing metadata &amp; building preview</span></div>;
   }
   if (asset.status === "failed") {
     return <div className="preview-empty err">INGEST FAILED<span className="dim">{asset.error}</span></div>;

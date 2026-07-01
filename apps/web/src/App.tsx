@@ -49,8 +49,8 @@ export default function App() {
         <aside className="left">
           <MediaPanel />
           <div className="tabs">
-            <button className={leftTab === "passes" ? "active" : ""} onClick={() => setLeftTab("passes")}>PASSES</button>
-            <button className={leftTab === "presets" ? "active" : ""} onClick={() => setLeftTab("presets")}>PRESETS</button>
+            <button className={leftTab === "passes" ? "active" : ""} onClick={() => setLeftTab("passes")}>ANALYZE</button>
+            <button className={leftTab === "presets" ? "active" : ""} onClick={() => setLeftTab("presets")}>PRESETS ★</button>
           </div>
           {leftTab === "passes" ? <PassesPanel /> : <PresetsPanel />}
         </aside>

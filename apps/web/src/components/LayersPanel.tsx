@@ -1,10 +1,23 @@
 import { useState } from "react";
 import { useShallow } from "zustand/react/shallow";
-import { LAYER_DEFS, newLayer, uniqueId } from "../layers";
+import { LAYER_DEFS, layerDef, newLayer, uniqueId, type LayerDef } from "../layers";
 import { useStore } from "../store";
+import type { RenderLayer, VisionPass } from "../types";
+
+const PASS_LABEL: Record<string, string> = {
+  mask: "mask", edge_matte: "edge outline", optical_flow: "motion",
+  face_landmarks: "face", pose_landmarks: "pose", hand_landmarks: "hands",
+  detection: "detections", depth: "depth", normals: "normals", body_parts: "body parts",
+};
+const neededLabel = (d: LayerDef) =>
+  [...new Set(d.sources.filter((s) => s.required).flatMap((s) => s.passTypes.map((t) => PASS_LABEL[t] ?? t)))].join(" / ");
+
+const isInert = (l: RenderLayer) =>
+  (layerDef(l.type)?.sources ?? []).some((s) => s.required && !l.sources[s.key]);
 
 export function LayersPanel() {
   const layers = useStore(useShallow((s) => s.project?.renderLayers ?? []));
+  const passes = useStore(useShallow((s) => s.passes.filter((p) => p.assetId === s.selectedAssetId && p.status === "ready")));
   const setLayers = useStore((s) => s.setLayers);
   const updateLayer = useStore((s) => s.updateLayer);
   const selected = useStore((s) => s.selectedLayerId);
@@ -12,6 +25,18 @@ export function LayersPanel() {
   const [adding, setAdding] = useState(false);
   const [dragging, setDragging] = useState<string | null>(null);
   const [over, setOver] = useState<{ idx: number; below: boolean } | null>(null);
+
+  // add a layer, auto-routing any required input to the most recent matching pass
+  const addLayer = (d: LayerDef) => {
+    const l = newLayer(d);
+    for (const src of d.sources) {
+      const cands = passes.filter((p: VisionPass) => src.passTypes.includes(p.type));
+      if (cands.length) l.sources[src.key] = cands[cands.length - 1].id;
+    }
+    setLayers([...layers, l]);
+    selectLayer(l.id);
+    setAdding(false);
+  };
 
   const hoverHalf = (e: React.DragEvent): boolean => {
     const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
@@ -34,22 +59,22 @@ export function LayersPanel() {
   return (
     <section className="panel grow">
       <h3>
-        RENDER LAYERS
+        2 · EFFECT LAYERS
         <button className="add" onClick={() => setAdding(!adding)}>{adding ? "×" : "+ ADD"}</button>
       </h3>
+      <div className="dim desc">Stack effects that read your passes. Top layer draws on top.</div>
       {adding && (
         <ul className="layer-add-list">
-          {LAYER_DEFS.map((d) => (
-            <li key={d.type} onClick={() => {
-              const l = newLayer(d);
-              setLayers([...layers, l]);
-              selectLayer(l.id);
-              setAdding(false);
-            }}>
-              <span className="name">{d.label}</span>
-              <span className="dim">{d.description}</span>
-            </li>
-          ))}
+          {LAYER_DEFS.map((d) => {
+            const needs = neededLabel(d);
+            return (
+              <li key={d.type} onClick={() => addLayer(d)}>
+                <span className="name">{d.label}</span>
+                <span className="dim">{d.description}</span>
+                {needs && <span className="needs-tag dim">needs: {needs}</span>}
+              </li>
+            );
+          })}
         </ul>
       )}
       <ul className="layer-list">
@@ -81,8 +106,10 @@ export function LayersPanel() {
             <span className="grip" title="drag to reorder">⠿</span>
             <button
               className={`eye ${l.enabled ? "on" : ""}`}
+              title={l.enabled ? "hide layer" : "show layer"}
               onClick={(e) => { e.stopPropagation(); updateLayer(l.id, { enabled: !l.enabled }); }}
             >{l.enabled ? "◉" : "○"}</button>
+            {isInert(l) && <span className="inert" title="Not rendering — connect an input pass in CONTROLS">⚠</span>}
             <span className="grow name">{l.name}</span>
             <button title="duplicate" onClick={(e) => {
               e.stopPropagation();
@@ -96,7 +123,7 @@ export function LayersPanel() {
             }}>✕</button>
           </li>
         ))}
-        {!layers.length && <li className="dim empty">no layers — add one or apply a preset</li>}
+        {!layers.length && <li className="dim empty">No effects yet. Click + LAYER on a pass, hit + ADD, or apply a preset.</li>}
       </ul>
     </section>
   );

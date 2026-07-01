@@ -8,6 +8,15 @@ const TYPE_TAGS: Record<string, string> = {
   body_parts: "PART", depth: "DPTH", normals: "NRML",
 };
 
+// full names for the tag tooltip (the 4-letter tags stay for the instrument look)
+const TYPE_NAMES: Record<string, string> = {
+  mask: "Mask (cutout of a subject)", detection: "Detections (labeled boxes)",
+  tracking: "Object tracking", face_landmarks: "Face mesh", pose_landmarks: "Body pose",
+  hand_landmarks: "Hand landmarks", optical_flow: "Motion (optical flow)",
+  edge_matte: "Edge outline", body_parts: "Body parts (Sapiens)",
+  depth: "Depth (Sapiens)", normals: "Surface normals (Sapiens)",
+};
+
 // common Sapiens parts for the quick derive-to-mask picker (id -> label)
 const QUICK_PARTS: [number, string][] = [
   [3, "Hair"], [2, "Face/Neck"], [21, "Torso"], [22, "Upper Clothing"],
@@ -41,60 +50,89 @@ export function PassesPanel() {
 
   const ready = asset?.status === "ready";
   const hasPrompt = promptPoints.length > 0 || promptBox != null;
+  const readyPasses = passes.filter((p) => p.status === "ready");
 
   return (
     <section className="panel grow">
-      <h3>VISION PASSES</h3>
+      <h3>1 · ANALYZE</h3>
+      <div className="dim desc">Run a model over the media. Results ("passes") feed the effect layers on the right.</div>
       {ready && (
         <div className="pass-generators">
-          <div className="seg-tools">
-            <button
-              className={tool === "click-prompt" ? "active" : ""}
-              onClick={() => setTool(tool === "click-prompt" ? "select" : "click-prompt")}
-            >CLICK</button>
-            <button
-              className={tool === "box-prompt" ? "active" : ""}
-              onClick={() => setTool(tool === "box-prompt" ? "select" : "box-prompt")}
-            >BOX</button>
-            <button disabled={!hasPrompt} onClick={runSegment} className="go">SEGMENT</button>
-            {hasPrompt && <button onClick={clearPrompt}>×</button>}
-          </div>
-          {tool !== "select" && (
-            <div className="hint dim">
-              {tool === "click-prompt" ? "click subject in preview · shift-click = negative" : "drag a box in preview"}
+          <div className="gen-group">
+            <span className="group-label">SELECT A SUBJECT</span>
+            <div className="seg-tools">
+              <button
+                className={tool === "click-prompt" ? "active" : ""}
+                title="Click the subject in the preview to select it"
+                onClick={() => setTool(tool === "click-prompt" ? "select" : "click-prompt")}
+              >Click</button>
+              <button
+                className={tool === "box-prompt" ? "active" : ""}
+                title="Drag a box around the subject in the preview"
+                onClick={() => setTool(tool === "box-prompt" ? "select" : "box-prompt")}
+              >Box</button>
+              <button disabled={!hasPrompt} onClick={runSegment} className="go"
+                      title={hasPrompt ? "Make a mask from your selection" : "Select a subject first"}>Make mask</button>
+              {hasPrompt && <button title="clear selection" onClick={clearPrompt}>×</button>}
             </div>
-          )}
-          <div className="seg-tools">
-            <input
-              value={detectPrompt}
-              onChange={(e) => setDetectPrompt(e.target.value)}
-              placeholder="bird, red jacket, all faces…"
-              onKeyDown={(e) => e.key === "Enter" && runDetect(detectPrompt, 0.35)}
-            />
-            <button className="go" title="open-vocab detection boxes"
-                    onClick={() => runDetect(detectPrompt, 0.35)}>DETECT</button>
-            <button className="go" title="text-prompted segmentation mask"
-                    onClick={() => runSegmentText(detectPrompt)}>MASK</button>
+            <div className="hint dim">
+              {tool === "click-prompt" ? "Click the subject in the preview · shift-click to exclude"
+                : tool === "box-prompt" ? "Drag a box around the subject in the preview"
+                : "Pick Click or Box, mark the subject in the preview, then Make mask."}
+            </div>
           </div>
-          <div className="seg-tools wrap">
-            <button onClick={() => runLandmarks("face")}>FACE</button>
-            <button onClick={() => runLandmarks("pose")}>POSE</button>
-            <button onClick={() => runLandmarks("hands")}>HANDS</button>
-            {asset?.type === "video" && <button onClick={runFlow}>FLOW</button>}
+
+          <div className="gen-group">
+            <span className="group-label">FIND BY WORDS</span>
+            <div className="seg-tools">
+              <input
+                value={detectPrompt}
+                onChange={(e) => setDetectPrompt(e.target.value)}
+                placeholder="bird, red jacket, all faces…"
+                onKeyDown={(e) => e.key === "Enter" && runDetect(detectPrompt, 0.35)}
+              />
+            </div>
+            <div className="seg-tools">
+              <button className="go" title="Detect labeled boxes for what you typed"
+                      onClick={() => runDetect(detectPrompt, 0.35)}>Find boxes</button>
+              <button className="go" title="Make a mask of what you typed"
+                      onClick={() => runSegmentText(detectPrompt)}>Mask it</button>
+            </div>
           </div>
-          <div className="gen-label dim">SAPIENS · human analysis</div>
-          <div className="seg-tools wrap">
-            <button title="28-class body-part segmentation" onClick={() => runSapiens("body_parts")}>PARTS</button>
-            <button title="human-centric depth" onClick={() => runSapiens("depth")}>DEPTH</button>
-            <button title="surface normals" onClick={() => runSapiens("normals")}>NORMALS</button>
+
+          <div className="gen-group">
+            <span className="group-label">BODY &amp; MOTION</span>
+            <div className="seg-tools wrap">
+              <button title="Face mesh landmarks" onClick={() => runLandmarks("face")}>Face</button>
+              <button title="Body pose skeleton" onClick={() => runLandmarks("pose")}>Pose</button>
+              <button title="Hand landmarks" onClick={() => runLandmarks("hands")}>Hands</button>
+              {asset?.type === "video" && <button title="Motion / optical flow (video)" onClick={runFlow}>Motion</button>}
+            </div>
+          </div>
+
+          <div className="gen-group">
+            <span className="group-label">PEOPLE · SAPIENS</span>
+            <div className="seg-tools wrap">
+              <button title="28-class body-part segmentation" onClick={() => runSapiens("body_parts")}>Body parts</button>
+              <button title="Human-centric depth map" onClick={() => runSapiens("depth")}>Depth</button>
+              <button title="Surface normals" onClick={() => runSapiens("normals")}>Normals</button>
+            </div>
+            <div className="hint dim">Needs a person in the frame.</div>
           </div>
         </div>
       )}
+
+      {readyPasses.length > 0 && (
+        <div className="pass-legend dim">
+          <b>+ LAYER</b> adds a tunable, exportable effect · <b>VIEW</b> is a quick peek
+        </div>
+      )}
+
       <ul className="pass-list">
         {passes.map((p) => (
           <li key={p.id} className={p.status}>
             <div className="pass-row">
-              <span className="tag">{TYPE_TAGS[p.type] ?? p.type.slice(0, 4).toUpperCase()}</span>
+              <span className="tag" title={TYPE_NAMES[p.type] ?? p.type}>{TYPE_TAGS[p.type] ?? p.type.slice(0, 4).toUpperCase()}</span>
               <div className="grow">
                 <div className="name">{p.name}</div>
                 <div className="dim">
@@ -105,31 +143,31 @@ export function PassesPanel() {
               </div>
               {p.status === "ready" && (
                 <>
-                  <button
-                    title="quick view (unstyled) — use +LYR for a styleable layer"
-                    className={visiblePassId === p.id ? "active" : ""}
-                    onClick={() => setVisiblePass(visiblePassId === p.id ? null : p.id)}
-                  >◉</button>
                   {p.type !== "tracking" && (
                     <button
                       className="go"
-                      title="create a render layer from this pass — all styling lives there"
+                      title="Add a render layer from this pass — style and export it on the right"
                       onClick={() => addLayerForPass(p)}
-                    >+LYR</button>
+                    >+ LAYER</button>
                   )}
+                  <button
+                    title="Quick peek at this pass (not styled, not exported)"
+                    className={visiblePassId === p.id ? "active" : ""}
+                    onClick={() => setVisiblePass(visiblePassId === p.id ? null : p.id)}
+                  >VIEW</button>
                   {p.type === "mask" && (
-                    <button title="derive edge matte" onClick={() => runEdgeMatte(p.id)}>EDG</button>
+                    <button title="Derive an edge-outline pass from this mask" onClick={() => runEdgeMatte(p.id)}>→ Edge</button>
                   )}
                   {p.type === "body_parts" && (
                     <button
-                      title="derive a mask from selected parts (feeds datamosh, pixel sort…)"
+                      title="Make a mask from selected body parts (feeds datamosh, pixel sort…)"
                       className={partPicker === p.id ? "active" : ""}
                       onClick={() => setPartPicker(partPicker === p.id ? null : p.id)}
-                    >→MSK</button>
+                    >→ Mask</button>
                   )}
                 </>
               )}
-              <button title="delete" onClick={() => deletePass(p.id)}>✕</button>
+              <button title="delete pass" onClick={() => deletePass(p.id)}>✕</button>
             </div>
             {partPicker === p.id && (
               <div className="part-picker">
@@ -147,12 +185,15 @@ export function PassesPanel() {
                   className="go wide"
                   disabled={!pickedParts.length}
                   onClick={() => { runBodyPartMask(p.id, pickedParts); setPartPicker(null); }}
-                >DERIVE MASK ({pickedParts.length} part{pickedParts.length === 1 ? "" : "s"})</button>
+                >MAKE MASK ({pickedParts.length} part{pickedParts.length === 1 ? "" : "s"})</button>
               </div>
             )}
           </li>
         ))}
-        {!passes.length && <li className="dim empty">no passes yet — prompt the machine above</li>}
+        {ready && !passes.length && (
+          <li className="dim empty">No passes yet. Select a subject and Make mask, type what to Find, or try Pose.</li>
+        )}
+        {!ready && <li className="dim empty">Upload media to start analyzing.</li>}
       </ul>
     </section>
   );

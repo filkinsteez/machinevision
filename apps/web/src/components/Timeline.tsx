@@ -16,7 +16,7 @@ export function Timeline() {
   return (
     <div className="timeline">
       <div className="transport">
-        <button onClick={() => previewController.seek(Math.max(frame - 1, 0))} title="step back">₀</button>
+        <button onClick={() => previewController.seek(Math.max(frame - 1, 0))} title="step back one frame">◀|</button>
         <button
           className="play"
           onClick={() => (playing ? previewController.pause() : previewController.play())}
@@ -24,23 +24,23 @@ export function Timeline() {
         >
           {playing ? "PAUSE" : "PLAY"}
         </button>
-        <button onClick={() => previewController.seek(Math.min(frame + 1, frameCount - 1))} title="step forward">₁</button>
+        <button onClick={() => previewController.seek(Math.min(frame + 1, frameCount - 1))} title="step forward one frame">|▶</button>
         <button
           className={muted ? "" : "active"}
           disabled={!isVideo}
-          title="toggle audio"
+          title={muted ? "sound is off — click to unmute" : "sound is on — click to mute"}
           onClick={() => {
             const next = !muted;
             setMuted(next);
             if (previewController.video) previewController.video.muted = next;
           }}
-        >{muted ? "MUTE" : "SND"}</button>
+        >{muted ? "🔇 OFF" : "🔊 ON"}</button>
         <button
           className={audioEnabled ? "active" : ""}
           disabled={!isVideo}
-          title="toggle audio-reactive mode"
+          title="Audio-reactive: effects pulse to the video's audio (same as the AUDIO panel)"
           onClick={() => setAudioReactive({ enabled: !audioEnabled })}
-        >RX</button>
+        >REACT</button>
       </div>
       <input
         type="range"
