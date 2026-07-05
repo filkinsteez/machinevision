@@ -377,6 +377,37 @@ export const useStore = create<State>((set, get) => ({
     if (!assetId || get().effectBusy) return;
     set({ effectBusy: eff.id });
     try {
+      if (eff.special === "people") {
+        const project = get().project;
+        if (!project) return;
+        const r = await api.people(project.id, assetId);
+        if (r.job) {
+          const deadline = Date.now() + 240000;
+          while (Date.now() < deadline) {
+            await new Promise((res) => setTimeout(res, 1500));
+            await get().refresh();
+            const det = get().passes.find((p) => p.id === r.pass.id);
+            if (det?.status === "ready") break;
+            if (det?.status === "failed") {
+              set({ error: `People: ${det.error ?? "analysis failed"}` });
+              return;
+            }
+          }
+        }
+        const built: RenderLayer[] = eff.layers.map((bp) => ({
+          id: uniqueId(),
+          type: bp.type,
+          name: bp.name,
+          enabled: true,
+          sources: Object.fromEntries(Object.entries(bp.sources).map(([k, t]) =>
+            [k, t === "detection" ? r.pass.id : r.posePassId])),
+          params: { ...(defaultParams(layerDef(bp.type)!) ?? {}), ...(bp.params ?? {}) },
+          blend: bp.blend ?? { mode: "normal", opacity: 1.0 },
+        }));
+        get().setLayers([...get().layers(), ...built]);
+        set({ selectedLayerId: built[built.length - 1].id });
+        return;
+      }
       const ok = await get().ensurePassTypes(eff.ensure);
       if (!ok) {
         set({ error: `${eff.label}: analysis didn't finish — check the job bar and try again.` });

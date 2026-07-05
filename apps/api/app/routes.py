@@ -273,6 +273,38 @@ def vision_edge_matte(body: EdgeMatteRequest):
                        {"maskPassId": body.maskPassId, "edgeWidth": body.edgeWidth})
 
 
+class PeopleRequest(BaseModel):
+    projectId: str
+    assetId: str
+
+
+@router.post("/vision/people")
+def vision_people(body: PeopleRequest):
+    """YOLO11-pose: person boxes + tracked skeletons in one job."""
+    ckey = pass_store.cache_key(body.assetId, "detection", "people", {"text": "person"}, {})
+    with SessionLocal() as db:
+        cached = _cached_pass(db, ckey)
+        if cached:
+            pose = (db.query(VisionPass)
+                    .filter(VisionPass.asset_id == body.assetId,
+                            VisionPass.provider == "people",
+                            VisionPass.type == "pose_landmarks",
+                            VisionPass.status == "ready").first())
+            if pose:
+                return {"pass": cached.to_dict(), "posePassId": pose.id,
+                        "cached": True, "job": None}
+    det_id = pass_store.create_pass(body.projectId, body.assetId, "detection",
+                                    "people boxes", "people", "", {"text": "person"}, {}, ckey)
+    pose_id = pass_store.create_pass(body.projectId, body.assetId, "pose_landmarks",
+                                     "people poses", "people", "", {"text": "person"}, {})
+    job = jobs.submit("vision.people",
+                      {"assetId": body.assetId, "passId": det_id, "posePassId": pose_id},
+                      body.projectId, body.assetId)
+    with SessionLocal() as db:
+        return {"pass": db.get(VisionPass, det_id).to_dict(),
+                "posePassId": pose_id, "cached": False, "job": job}
+
+
 @router.post("/vision/sapiens")
 def vision_sapiens(body: SapiensRequest):
     if body.task not in ("body_parts", "depth", "normals"):

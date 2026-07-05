@@ -13,6 +13,8 @@ export interface EffectDef {
   group: "see" | "style";
   /** pass types to auto-generate before the layer can render */
   ensure: PassType[];
+  /** non-generic pipelines (e.g. "people" = one job producing boxes + poses) */
+  special?: "people";
   /** layer blueprints; sourceKey -> pass type resolved after generation */
   layers: Array<{
     type: string;
@@ -26,6 +28,27 @@ export interface EffectDef {
 
 export const EFFECTS: EffectDef[] = [
   // ---- SEE: the model's perception, drawn straight onto the footage ----
+  {
+    id: "people", label: "People", group: "see", special: "people",
+    tagline: "Boxes + skeletons on every person (YOLO11-pose)",
+    ensure: [],
+    layers: [
+      {
+        type: "object_labels", name: "People",
+        sources: { detection: "detection" },
+        params: { boxStyle: "box", labelFormat: "label", showConfidence: true,
+                  showTrackId: true, showLabel: true, threshold: 0.35, fontSize: 11,
+                  lineWidth: 1.5, color: "#FF5A00", labelColor: "#FF5A00",
+                  labelBackground: true },
+      },
+      {
+        type: "landmark_overlay", name: "People Poses",
+        sources: { landmarks: "pose_landmarks" },
+        params: { style: "skeleton", lineWidth: 1.6, pointSize: 2.5, color: "#00C853",
+                  dropout: 0, trail: 0, seed: 42 },
+      },
+    ],
+  },
   {
     id: "objects", label: "Objects", group: "see",
     tagline: "Numbered detection labels on everything found",

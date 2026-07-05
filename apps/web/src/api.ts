@@ -40,6 +40,9 @@ export const api = {
     http<{ pass: VisionPass; cached: boolean; job: Job | null }>("POST", "/api/vision/optical-flow", { projectId, assetId }),
   edgeMatte: (projectId: string, maskPassId: string) =>
     http<{ pass: VisionPass; cached: boolean; job: Job | null }>("POST", "/api/vision/edge-matte", { projectId, maskPassId }),
+  people: (projectId: string, assetId: string) =>
+    http<{ pass: VisionPass; posePassId: string; cached: boolean; job: Job | null }>(
+      "POST", "/api/vision/people", { projectId, assetId }),
   sapiens: (projectId: string, assetId: string, task: "body_parts" | "depth" | "normals") =>
     http<{ pass: VisionPass; cached: boolean; job: Job | null }>("POST", "/api/vision/sapiens", { projectId, assetId, task }),
   bodyPartMask: (projectId: string, bodyPartsPassId: string, partIds: number[]) =>

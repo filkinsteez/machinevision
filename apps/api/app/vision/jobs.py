@@ -5,7 +5,7 @@ import numpy as np
 from .. import media, storage
 from ..db import Asset, SessionLocal
 from ..jobs import handler
-from . import adapter, passes, providers, providers_real, providers_sapiens
+from . import adapter, passes, providers, providers_people, providers_real, providers_sapiens
 
 
 def _get_asset(asset_id: str) -> Asset:
@@ -220,6 +220,80 @@ def run_detect(ctx):
         raise
 
 
+@handler("vision.people")
+def run_people(ctx):
+    """YOLO11-pose: boxes + tracked skeletons for EVERY person, one model, one
+    decode. Writes a detection pass and a pose_landmarks pass together."""
+    p = ctx.params
+    asset = _get_asset(p["assetId"])
+    det_pass_id = p["passId"]
+    pose_pass_id = p["posePassId"]
+    if not providers_people.available():
+        passes.fail_pass(det_pass_id, "people detection needs a CUDA GPU")
+        passes.fail_pass(pose_pass_id, "people detection needs a CUDA GPU")
+        raise ValueError("YOLO people provider requires CUDA")
+    det_writer = passes.PassWriter(det_pass_id)
+    pose_writer = passes.PassWriter(pose_pass_id)
+    try:
+        providers_people.reset_tracker()
+        total = asset.frame_count or 1
+        det_frames = []
+        pose_frames = []
+        tracks_seen: set[int] = set()
+        frames_with = 0
+        last = 0
+        for idx, frame in _frames(asset):
+            if ctx.cancelled:
+                passes.fail_pass(det_pass_id, "cancelled")
+                passes.fail_pass(pose_pass_id, "cancelled")
+                return None
+            people = providers_people.track_frame(frame)
+            dets = []
+            ents = []
+            for person in people:
+                tid = person["trackId"]
+                tracks_seen.add(tid)
+                dets.append({
+                    "id": f"det_{idx}_{tid}", "label": "person",
+                    "bbox": person["bbox"], "confidence": person["confidence"],
+                    "trackId": f"track_{tid}",
+                })
+                ents.append({"id": f"person_{tid}", "points": person["points"]})
+            det_frames.append({"frame": idx, "detections": dets})
+            pose_frames.append({"frame": idx, "entities": ents})
+            if people:
+                frames_with += 1
+            last = idx
+            if idx % 10 == 0:
+                ctx.update(idx / total, f"people frame {idx}/{total}")
+
+        ver = providers_people.version()
+        det_key = det_writer.finalize({
+            "type": "detection", "assetId": asset.id,
+            "provider": "people", "providerVersion": ver,
+            "width": asset.proxy_width, "height": asset.proxy_height,
+            "prompt": {"text": "person"}, "frames": det_frames,
+        })
+        n_det = sum(len(f["detections"]) for f in det_frames)
+        passes.finish_pass(det_pass_id, det_key, 0, last,
+                           {"people": len(tracks_seen), "detections": n_det}, ver)
+        pose_key = pose_writer.finalize({
+            "type": "pose_landmarks", "assetId": asset.id, "kind": "pose",
+            "provider": "people", "providerVersion": ver,
+            "width": asset.proxy_width, "height": asset.proxy_height,
+            "connections": [list(c) for c in providers_people.COCO_CONNECTIONS],
+            "frames": pose_frames,
+        })
+        passes.finish_pass(pose_pass_id, pose_key, 0, last,
+                           {"seen in": f"{frames_with}/{len(pose_frames)} frames",
+                            "people": len(tracks_seen)}, ver)
+        return {"passId": det_pass_id, "posePassId": pose_pass_id}
+    except Exception as exc:
+        passes.fail_pass(det_pass_id, str(exc))
+        passes.fail_pass(pose_pass_id, str(exc))
+        raise
+
+
 @handler("vision.landmarks")
 def run_landmarks(ctx):
     p = ctx.params
@@ -230,6 +304,42 @@ def run_landmarks(ctx):
     sol = None
     pose_sol = None
     try:
+        # pose goes through YOLO11-pose when the GPU is up — MediaPipe collapses
+        # past ~2 people; face/hands stay MediaPipe (it's good at those)
+        if kind == "pose" and providers_people.available():
+            providers_people.reset_tracker()
+            total = asset.frame_count or 1
+            frames_meta = []
+            frames_with = 0
+            people_seen: set[int] = set()
+            last = 0
+            for idx, frame in _frames(asset):
+                if ctx.cancelled:
+                    passes.fail_pass(pass_id, "cancelled")
+                    return None
+                people = providers_people.track_frame(frame)
+                ents = [{"id": f"person_{q['trackId']}", "points": q["points"]} for q in people]
+                for q in people:
+                    people_seen.add(q["trackId"])
+                if ents:
+                    frames_with += 1
+                frames_meta.append({"frame": idx, "entities": ents})
+                last = idx
+                if idx % 10 == 0:
+                    ctx.update(idx / total, f"pose frame {idx}/{total}")
+            ver = providers_people.version()
+            data_key = writer.finalize({
+                "type": "pose_landmarks", "assetId": asset.id, "kind": "pose",
+                "provider": "people", "providerVersion": ver,
+                "width": asset.proxy_width, "height": asset.proxy_height,
+                "connections": [list(c) for c in providers_people.COCO_CONNECTIONS],
+                "frames": frames_meta,
+            })
+            passes.finish_pass(pass_id, data_key, 0, last,
+                               {"seen in": f"{frames_with}/{len(frames_meta)} frames",
+                                "people": len(people_seen)}, ver)
+            return {"passId": pass_id}
+
         process, connections, sol = providers.get_landmarker(kind)
         total = asset.frame_count or 1
         frames_meta = []
