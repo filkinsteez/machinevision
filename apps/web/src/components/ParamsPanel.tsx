@@ -92,7 +92,12 @@ function ParamControl({ name, spec, layer }: { name: string; spec: ParamSpec; la
 export function ParamsPanel() {
   const layer = useStore((s) => s.project?.renderLayers.find((l) => l.id === s.selectedLayerId) ?? null);
   const passes = useStore(useShallow((s) => s.passes.filter((p) => p.assetId === s.selectedAssetId && p.status === "ready")));
+  // cross-clip routing (the Ghost trick): other clips' analysis is offerable too
+  const otherPasses = useStore(useShallow((s) => s.passes.filter((p) => p.assetId !== s.selectedAssetId && p.status === "ready")));
+  const assets = useStore(useShallow((s) => s.assets));
   const updateLayer = useStore((s) => s.updateLayer);
+  const assetName = (id: string) =>
+    (assets.find((a) => a.id === id)?.name ?? "clip").replace(/\.[^.]+$/, "").slice(0, 24);
 
   if (!layer) {
     return <section className="panel"><h3>LAYER CONTROLS</h3><div className="dim empty">select a layer</div></section>;
@@ -117,12 +122,13 @@ export function ParamsPanel() {
         <span className="group-label">INPUT</span>
         {def.sources.map((src) => {
           const candidates = passes.filter((p) => src.passTypes.includes(p.type));
+          const ghosts = otherPasses.filter((p) => src.passTypes.includes(p.type));
           const need = passTypesLabel(src.passTypes);
           const unrouted = src.required && !layer.sources[src.key];
           return (
             <label className={`param row ${unrouted ? "needs" : ""}`} key={src.key}>
               <span>{sourceLabel(src)}{src.required ? " *" : ""}</span>
-              {candidates.length === 0 ? (
+              {candidates.length === 0 && ghosts.length === 0 ? (
                 <span className="dim need-pass">— make a {need} pass first —</span>
               ) : (
                 <select
@@ -133,6 +139,13 @@ export function ParamsPanel() {
                 >
                   <option value="">— none —</option>
                   {candidates.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                  {ghosts.length > 0 && (
+                    <optgroup label="⟵ from other clips (ghost)">
+                      {ghosts.map((p) => (
+                        <option key={p.id} value={p.id}>{p.name} ⟵ {assetName(p.assetId)}</option>
+                      ))}
+                    </optgroup>
+                  )}
                 </select>
               )}
             </label>

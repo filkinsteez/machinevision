@@ -13,8 +13,9 @@ export interface EffectDef {
   group: "see" | "style";
   /** pass types to auto-generate before the layer can render */
   ensure: PassType[];
-  /** non-generic pipelines (e.g. "people" = one job producing boxes + poses) */
-  special?: "people";
+  /** non-generic pipelines (e.g. "people" = one job producing boxes + poses,
+   * "ghost" = layers wired to ANOTHER clip's analysis) */
+  special?: "people" | "ghost";
   /** layer blueprints; sourceKey -> pass type resolved after generation */
   layers: Array<{
     type: string;
@@ -211,6 +212,12 @@ export const EFFECTS: EffectDef[] = [
       sources: { field: "depth" },
       params: { mode: "relief", strength: 1.4 },
     }],
+  },
+  {
+    id: "ghost", label: "Ghost", group: "style", special: "ghost",
+    tagline: "Haunt this clip with another clip's analysis — masks, motion, skeletons",
+    ensure: [],
+    layers: [], // built dynamically from whatever the donor clip has
   },
   {
     id: "edge_decay", label: "Edge Decay", group: "style",

@@ -432,6 +432,62 @@ export const useStore = create<State>((set, get) => ({
         set({ selectedLayerId: built[built.length - 1].id });
         return;
       }
+      if (eff.special === "ghost") {
+        // haunt the current clip with ANOTHER clip's analysis — the good part
+        // of the old cross-clip contamination bug, on purpose this time
+        const donors = get().passes.filter((p) => p.assetId !== assetId && p.status === "ready");
+        if (!donors.length) {
+          set({ error: "Ghost needs a second clip with analysis — run some effects on another clip first." });
+          return;
+        }
+        const donorAsset = donors[donors.length - 1].assetId; // most recent donor
+        const donorName = get().assets.find((a) => a.id === donorAsset)?.name?.replace(/\.[^.]+$/, "") ?? "other clip";
+        const dp = (t: string) => {
+          const m = donors.filter((p) => p.assetId === donorAsset && p.type === t);
+          return m.length ? m[m.length - 1].id : null;
+        };
+        const mk = (type: string, name: string, sources: Record<string, string | null>,
+                    params: RenderLayer["params"], blend?: RenderLayer["blend"]): RenderLayer => ({
+          id: uniqueId(), type, name: `${name} ⟵ ${donorName.slice(0, 18)}`, enabled: true,
+          assetId,
+          sources,
+          params: { ...(defaultParams(layerDef(type)!) ?? {}), ...params },
+          blend: blend ?? { mode: "normal", opacity: 1.0 },
+        });
+        const built: RenderLayer[] = [];
+        const gMask = dp("mask");
+        const gFlow = dp("optical_flow");
+        if (gMask) {
+          built.push(mk("matte_view", "Ghost Matte", { mask: gMask },
+            { mode: "tint", color: "#FF5A00", amount: 0.55, invert: false },
+            { mode: "screen", opacity: 0.85 }));
+        }
+        if (gMask && gFlow) {
+          built.push(mk("datamosh_preview", "Ghost Mosh", { mask: gMask, flow: gFlow },
+            { mode: "subject", strength: 0.9, decay: 0.97, blockSize: 14, edgeLeak: 0.45, seed: 66 }));
+        } else if (gFlow) {
+          built.push(mk("flow_smear", "Ghost Drag", { flow: gFlow },
+            { strength: 4, decay: 0.95, region: "all" }));
+        }
+        const gPose = dp("pose_landmarks");
+        const gFace = dp("face_landmarks");
+        if (gPose) {
+          built.push(mk("landmark_overlay", "Ghost Pose", { landmarks: gPose },
+            { style: "skeleton", lineWidth: 1.4, pointSize: 2.5, color: "#2962FF",
+              dropout: 0.15, trail: 10, seed: 9 }));
+        } else if (gFace) {
+          built.push(mk("landmark_overlay", "Ghost Mesh", { landmarks: gFace },
+            { style: "wireframe", lineWidth: 0.6, pointSize: 0, color: "#2962FF",
+              dropout: 0.2, trail: 0, seed: 9 }));
+        }
+        if (!built.length) {
+          set({ error: `Ghost: "${donorName}" has no usable analysis (mask, motion, pose, or face).` });
+          return;
+        }
+        get().setLayers([...get().layers(), ...built]);
+        set({ selectedLayerId: built[built.length - 1].id });
+        return;
+      }
       const ok = await get().ensurePassTypes(eff.ensure);
       if (!ok) {
         set({ error: `${eff.label}: analysis didn't finish — check the job bar and try again.` });
