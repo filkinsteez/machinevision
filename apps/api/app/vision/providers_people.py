@@ -35,6 +35,13 @@ def version() -> str:
     return f"{MODEL_ID} (ultralytics {ultralytics.__version__})"
 
 
+def _device_index() -> int:
+    if "device" not in _state:
+        from .providers_real import pick_gpu
+        _state["device"] = pick_gpu()
+    return _state["device"]
+
+
 def _get_model():
     with _lock:
         if "model" not in _state:
@@ -62,7 +69,7 @@ def track_frame(frame_bgr: np.ndarray, conf: float = 0.35):
     with _lock:
         model = _get_model()
         res = model.track(frame_bgr, persist=True, verbose=False, conf=conf,
-                          tracker="bytetrack.yaml", device=0)[0]
+                          tracker="bytetrack.yaml", device=_device_index())[0]
         h, w = frame_bgr.shape[:2]
         out = []
         if res.boxes is None or len(res.boxes) == 0:

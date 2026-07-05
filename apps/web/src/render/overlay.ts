@@ -25,6 +25,7 @@ export function drawOverlays(
     if (layer.type === "object_labels") drawLabels(ctx, layer, frame, w, h);
     else if (layer.type === "landmark_overlay") drawLandmarks(ctx, layer, frame, w, h);
     else if (layer.type === "gaze_overlay") drawGaze(ctx, layer, frame, w, h);
+    else if (layer.type === "tracker_overlay") drawTracker(ctx, layer, frame, w, h);
     else if (layer.type === "metadata_typography") drawMetadata(ctx, layer, passes, frame, w, h);
   }
 }
@@ -247,6 +248,96 @@ function drawLandmarks(ctx: CanvasRenderingContext2D, layer: RenderLayer,
     }
   }
   drawFrame(frame, 1);
+  ctx.globalAlpha = 1;
+}
+
+// -------------------------------------------------------------------- tracker
+// One locked marker following the SAM2-tracked subject through the scene —
+// the Tidal-style shot. Reads the per-frame bbox stored in the mask pass.
+function drawTracker(ctx: CanvasRenderingContext2D, layer: RenderLayer,
+                     frame: number, w: number, h: number) {
+  const passId = layer.sources.mask;
+  if (!passId) return;
+  const data = getPassJSON(passId);
+  if (!data) return;
+  const p = layer.params;
+  const color = String(p.color ?? "#FF5A00");
+  const lw = Number(p.lineWidth ?? 1.5);
+  const style = String(p.style ?? "brackets");
+  const trailN = Number(p.trail ?? 36);
+  const smooth = Math.max(Number(p.smooth ?? 2), 0);
+  const readout = p.readout !== false;
+
+  const bboxAt = (f: number): number[] | null => {
+    const e = frameEntry(data, f);
+    return (e && Array.isArray(e.bbox)) ? (e.bbox as number[]) : null;
+  };
+
+  // smoothed current bbox (average over the last `smooth+1` frames)
+  const boxes: number[][] = [];
+  for (let f = frame; f >= Math.max(0, frame - smooth); f--) {
+    const b = bboxAt(f);
+    if (b) boxes.push(b);
+  }
+  if (!boxes.length) return;
+  const bb = boxes[0].map((_, i) => boxes.reduce((s, b) => s + b[i], 0) / boxes.length);
+  const x = bb[0] * w, y = bb[1] * h, bw = bb[2] * w, bh = bb[3] * h;
+  const cx = x + bw / 2, cy = y + bh / 2;
+
+  ctx.globalAlpha = layer.blend.opacity;
+  ctx.strokeStyle = color;
+  ctx.fillStyle = color;
+  ctx.lineWidth = lw;
+  ctx.font = MONO;
+
+  // trail: path of past centers, fading out
+  if (trailN > 0) {
+    let prev: [number, number] | null = [cx, cy];
+    for (let t = 1; t <= trailN; t++) {
+      const b = bboxAt(frame - t);
+      if (!b) { prev = null; continue; }
+      const px = (b[0] + b[2] / 2) * w, py = (b[1] + b[3] / 2) * h;
+      if (prev) {
+        ctx.globalAlpha = layer.blend.opacity * (1 - t / (trailN + 1)) * 0.9;
+        ctx.beginPath();
+        ctx.moveTo(prev[0], prev[1]);
+        ctx.lineTo(px, py);
+        ctx.stroke();
+      }
+      prev = [px, py];
+    }
+    ctx.globalAlpha = layer.blend.opacity;
+  }
+
+  // the lock
+  if (style === "box") {
+    ctx.strokeRect(x, y, bw, bh);
+  } else if (style === "crosshair") {
+    const r = Math.max(Math.min(bw, bh) * 0.35, 8);
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.moveTo(cx - r * 1.6, cy); ctx.lineTo(cx - r * 0.55, cy);
+    ctx.moveTo(cx + r * 0.55, cy); ctx.lineTo(cx + r * 1.6, cy);
+    ctx.moveTo(cx, cy - r * 1.6); ctx.lineTo(cx, cy - r * 0.55);
+    ctx.moveTo(cx, cy + r * 0.55); ctx.lineTo(cx, cy + r * 1.6);
+    ctx.stroke();
+    ctx.fillRect(cx - 1, cy - 1, 2, 2);
+  } else { // brackets
+    const s = Math.max(Math.min(bw, bh) * 0.22, 6);
+    ctx.beginPath();
+    ctx.moveTo(x, y + s); ctx.lineTo(x, y); ctx.lineTo(x + s, y);
+    ctx.moveTo(x + bw - s, y); ctx.lineTo(x + bw, y); ctx.lineTo(x + bw, y + s);
+    ctx.moveTo(x + bw, y + bh - s); ctx.lineTo(x + bw, y + bh); ctx.lineTo(x + bw - s, y + bh);
+    ctx.moveTo(x + s, y + bh); ctx.lineTo(x, y + bh); ctx.lineTo(x, y + bh - s);
+    ctx.stroke();
+  }
+
+  if (readout) {
+    const e = frameEntry(data, frame);
+    const conf = e?.confidence != null ? ` ${(e.confidence as number).toFixed(2)}` : "";
+    ctx.fillText(`TRK 01${conf}`, x, y - 6);
+    ctx.fillText(`${(cx / w * 100).toFixed(1)} ${(cy / h * 100).toFixed(1)}`, x, y + bh + 12);
+  }
   ctx.globalAlpha = 1;
 }
 

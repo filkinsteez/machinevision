@@ -29,6 +29,17 @@ export interface EffectDef {
 export const EFFECTS: EffectDef[] = [
   // ---- SEE: the model's perception, drawn straight onto the footage ----
   {
+    id: "track", label: "Track", group: "see",
+    tagline: "Lock onto one subject and follow it through the scene",
+    ensure: ["mask"],
+    layers: [{
+      type: "tracker_overlay", name: "Track",
+      sources: { mask: "mask" },
+      params: { style: "brackets", trail: 36, lineWidth: 1.5, color: "#FF5A00",
+                smooth: 2, readout: true },
+    }],
+  },
+  {
     id: "people", label: "People", group: "see", special: "people",
     tagline: "Boxes + skeletons on every person (YOLO11-pose)",
     ensure: [],

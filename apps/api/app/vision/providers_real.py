@@ -35,9 +35,39 @@ def versions() -> dict:
     }
 
 
+def pick_gpu() -> int:
+    """Pick a CUDA device. Free memory decides, but near-ties go to the HIGHEST
+    index: apps like ComfyUI default to device 0 and lazily load/unload, so a
+    startup free-memory snapshot is a race — device 0 can look empty and fill
+    later. MI_GPU env var overrides. (mem_get_info must run inside each
+    device's context or it reports the current device for all.)"""
+    import os
+
+    import torch
+    forced = os.environ.get("MI_GPU")
+    if forced is not None and forced.isdigit():
+        print(f"[machine.industries] GPU pick: cuda:{forced} (MI_GPU override)")
+        return int(forced)
+    stats = []
+    for i in range(torch.cuda.device_count()):
+        with torch.cuda.device(i):
+            free, _total = torch.cuda.mem_get_info()
+        stats.append((free, i))
+    # sort by free desc; treat within-2GB as a tie broken by higher index
+    stats.sort(key=lambda s: (-round(s[0] / 2e9), -s[1]))
+    free, best = stats[0]
+    print(f"[machine.industries] GPU pick: cuda:{best} ({free / 1e9:.1f} GB free) "
+          f"of {[(i, round(f / 1e9, 1)) for f, i in stats]}")
+    return best
+
+
 def _device() -> str:
     import torch
-    return "cuda" if torch.cuda.is_available() else "cpu"
+    if not torch.cuda.is_available():
+        return "cpu"
+    if "device" not in _state:
+        _state["device"] = f"cuda:{pick_gpu()}"
+    return _state["device"]
 
 
 def _get_dino():
@@ -152,8 +182,14 @@ def sam2_video_masks(frames_bgr: list[np.ndarray], prompts: list[dict]):
         proc, model = _get_sam2_video()
         h, w = frames_bgr[0].shape[:2]
         rgb_frames = [cv2.cvtColor(f, cv2.COLOR_BGR2RGB) for f in frames_bgr]
+        # keep video preprocessing, storage, and inference state in system RAM —
+        # only per-frame features go to the GPU. Without processing_device="cpu"
+        # SAM2 materializes the ENTIRE resized clip on the GPU (~10 GB for 800
+        # frames) before storing it, OOMing long clips.
         session = proc.init_video_session(
-            video=rgb_frames, inference_device=_device())
+            video=rgb_frames, inference_device=_device(),
+            processing_device="cpu", video_storage_device="cpu",
+            inference_state_device="cpu")
         for i, prompt in enumerate(prompts):
             proc.add_inputs_to_inference_session(
                 inference_session=session, frame_idx=0, obj_ids=i + 1,
@@ -165,11 +201,15 @@ def sam2_video_masks(frames_bgr: list[np.ndarray], prompts: list[dict]):
             arr = masks.cpu().numpy()
             return (arr.reshape(-1, h, w).max(axis=0) > 0).astype(np.uint8) * 255
 
-        with torch.no_grad():
-            # anchor: run inference on the prompted frame before propagation
-            first = model(inference_session=session, frame_idx=0)
-            yield 0, to_union(first.pred_masks), 1.0
-            for out in model.propagate_in_video_iterator(session):
-                if out.frame_idx == 0:
-                    continue
-                yield out.frame_idx, to_union(out.pred_masks), 1.0
+        try:
+            with torch.no_grad():
+                # anchor: run inference on the prompted frame before propagation
+                first = model(inference_session=session, frame_idx=0)
+                yield 0, to_union(first.pred_masks), 1.0
+                for out in model.propagate_in_video_iterator(session):
+                    if out.frame_idx == 0:
+                        continue
+                    yield out.frame_idx, to_union(out.pred_masks), 1.0
+        finally:
+            del session
+            torch.cuda.empty_cache()

@@ -47,7 +47,12 @@ def version(task: str) -> str:
 
 def _device() -> str:
     import torch
-    return "cuda" if torch.cuda.is_available() else "cpu"
+    if not torch.cuda.is_available():
+        return "cpu"
+    if "device" not in _state:
+        from .providers_real import pick_gpu
+        _state["device"] = f"cuda:{pick_gpu()}"
+    return _state["device"]
 
 
 def _get_model(task: str):

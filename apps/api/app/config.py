@@ -5,7 +5,11 @@ SQLite instead of Postgres, local-disk storage instead of S3/MinIO, in-process t
 pool instead of Celery. All three sit behind the same interfaces the production
 versions will implement.
 """
+import os
 from pathlib import Path
+
+# reduce CUDA fragmentation OOMs on long clips (must be set before torch loads)
+os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 DATA_DIR = REPO_ROOT / "data"

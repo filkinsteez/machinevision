@@ -45,11 +45,14 @@ cd apps/api
 
 - Upload image/video → PyAV ingest, proxy, thumbnail (no external FFmpeg needed)
 - **Real GPU providers when CUDA is available**: SAM 2.1 segmentation with native video
-  masklet propagation (click/box/text prompts) and Grounding DINO open-vocabulary
-  detection ("bird" finds birds), via HuggingFace transformers. Without CUDA the stub
-  roster (GrabCut + CSRT, saliency detector) takes over automatically. MediaPipe
-  face/pose/hand landmarks (Tasks API), Farneback optical flow, ByteTrack tracking via
-  Supervision, derived edge mattes — all real on CPU.
+  masklet propagation (click/box/text prompts — powers the one-click **Track** effect:
+  a locked marker + trail following one subject through the scene), Grounding DINO
+  open-vocabulary detection ("bird" finds birds), and **YOLO11x-pose** for People —
+  boxes + 17-keypoint skeletons + ByteTrack IDs for everyone in frame (~20-30 fps on a
+  4090; ultralytics is AGPL — review before commercial hosting). Without CUDA the stub
+  roster (GrabCut + CSRT, saliency detector) takes over automatically. MediaPipe face
+  (478 pts incl. iris → the Gaze effect) and hands, Farneback optical flow, derived
+  edge mattes — real on CPU.
 - **Meta Sapiens** (GPU): human-centric foundation models — 28-class body-part
   segmentation, depth, and surface normals (sapiens-0.3b torchscript). Body parts can
   be colorized/isolated or derived into a mask (hair, torso, clothing…) that feeds the

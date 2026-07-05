@@ -204,6 +204,21 @@ export const LAYER_DEFS: LayerDef[] = [
     },
   },
   {
+    type: "tracker_overlay",
+    label: "Tracker",
+    engine: "overlay",
+    description: "One locked marker following the tracked subject — box, trail, coordinates.",
+    sources: [{ key: "mask", passTypes: ["mask"], required: true }],
+    params: {
+      style: { kind: "select", options: ["brackets", "crosshair", "box"], default: "brackets", label: "Marker" },
+      trail: { kind: "slider", min: 0, max: 120, step: 2, default: 36, label: "Trail (frames)" },
+      lineWidth: { kind: "slider", min: 0.5, max: 5, step: 0.25, default: 1.5, label: "Line Width" },
+      color: { kind: "color", default: "#FF5A00", label: "Color" },
+      smooth: { kind: "slider", min: 0, max: 8, step: 1, default: 2, label: "Smoothing" },
+      readout: { kind: "toggle", default: true, label: "ID + Coords" },
+    },
+  },
+  {
     type: "gaze_overlay",
     label: "Gaze",
     engine: "overlay",
