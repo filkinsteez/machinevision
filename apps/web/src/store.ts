@@ -66,7 +66,7 @@ interface State {
   undo: () => void;
   redo: () => void;
   copyLayers: () => void;
-  pasteLayers: () => void;
+  pasteLayers: () => Promise<void>;
   deleteSelectedLayers: () => void;
   applyPreset: (preset: Preset) => void;
   applyPresetAuto: (preset: Preset) => Promise<void>;
@@ -399,43 +399,90 @@ export const useStore = create<State>((set, get) => ({
     set({ notice: `Copied ${n} layer${n > 1 ? "s" : ""} — select a clip and Ctrl+V` });
   },
 
-  pasteLayers: () => {
-    if (!layerClipboard.length) return;
+  // Paste means "this look, on THIS clip": every input re-targets to the
+  // current clip's own analysis (generated on the fly if missing) — never
+  // the clip the layers came from. Ghost layers are the one exception: a
+  // ghost_blend exists to show ANOTHER clip's pixels, so cross-clip pastes
+  // drop it (run Ghost on this clip to haunt on purpose).
+  pasteLayers: async () => {
+    if (!layerClipboard.length || get().effectBusy) return;
     const assetId = get().selectedAssetId;
     if (!assetId) return;
-    const passType = new Map(get().passes.map((p) => [p.id, p.type]));
-    const ready = get().passes.filter((p) => p.assetId === assetId && p.status === "ready");
-    const latestOfType = (t: string) => {
-      const m = ready.filter((p) => p.type === t);
-      return m.length ? m[m.length - 1].id : null;
-    };
-    const built = layerClipboard.map((c) => {
-      const l = JSON.parse(JSON.stringify(c)) as RenderLayer;
-      const from = l.assetId;
-      l.id = uniqueId();
-      l.assetId = assetId;
-      if (l.type === "ghost_blend") {
-        // blending a clip through itself is invisible — haunt the clip it came from
-        if (l.params?.donorAssetId === assetId && from && from !== assetId) {
-          l.params = { ...l.params, donorAssetId: from };
-        }
-      } else if (from && from !== assetId) {
-        // re-route inputs to this clip's own analysis when it exists;
-        // otherwise keep the source clip's pass (renders ghost-style)
-        l.sources = Object.fromEntries(Object.entries(l.sources).map(([k, v]) => {
-          const t = v ? passType.get(v) : null;
-          return [k, (t ? latestOfType(t) : null) ?? v];
-        }));
+    set({ effectBusy: "paste" });
+    try {
+      const incoming = layerClipboard.filter((c) =>
+        c.type !== "ghost_blend" || !c.assetId || c.assetId === assetId);
+      const skipped = layerClipboard.length - incoming.length;
+      if (!incoming.length) {
+        set({ notice: "Clipboard only holds ghost layers — run Ghost on this clip instead." });
+        return;
       }
-      return l;
-    });
-    get().setLayers([...get().layers(), ...built]);
-    const name = get().assets.find((a) => a.id === assetId)?.name?.replace(/\.[^.]+$/, "") ?? "clip";
-    set({
-      selectedLayerId: built[built.length - 1].id,
-      selectedLayerIds: built.map((b) => b.id),
-      notice: `Pasted ${built.length} layer${built.length > 1 ? "s" : ""} onto ${name.slice(0, 24)}`,
-    });
+      const passTypeOf = new Map(get().passes.map((p) => [p.id, p.type]));
+      // a source can rewire to the same type as its original pass, or any
+      // type the layer def accepts for that input (e.g. edge decay takes a
+      // plain mask when there's no edge outline)
+      const allowedFor = (layerType: string, key: string, orig: string | null) => {
+        const t = orig ? passTypeOf.get(orig) : null;
+        const defTypes = layerDef(layerType)?.sources.find((sd) => sd.key === key)?.passTypes ?? [];
+        return [...new Set([...(t ? [t] : []), ...defTypes])];
+      };
+      const readyTypes = () => new Set(get().passes
+        .filter((p) => p.assetId === assetId && p.status === "ready").map((p) => p.type));
+      // run whatever analysis this clip is missing for the pasted look
+      // (only types ensurePassTypes knows how to generate — e.g. "tracking"
+      // comes from the Track effect, not from here)
+      const generatable = new Set<string>(["mask", "edge_matte", "optical_flow", "depth",
+        "normals", "body_parts", "face_landmarks", "pose_landmarks", "hand_landmarks", "detection"]);
+      const needed = new Set<PassType>();
+      for (const c of incoming) {
+        if (!c.assetId || c.assetId === assetId) continue;
+        for (const [k, v] of Object.entries(c.sources)) {
+          if (!v) continue;
+          const allowed = allowedFor(c.type, k, v);
+          const orig = passTypeOf.get(v);
+          if (!allowed.some((a) => readyTypes().has(a)) && orig && generatable.has(orig)) {
+            needed.add(orig as PassType);
+          }
+        }
+      }
+      if (needed.size) {
+        set({ notice: `Analyzing this clip for the pasted look: ${[...needed].join(", ")}…` });
+        await get().ensurePassTypes([...needed]);
+      }
+      const ready = get().passes.filter((p) => p.assetId === assetId && p.status === "ready");
+      const latestOf = (types: string[]) => {
+        for (const t of types) {
+          const m = ready.filter((p) => p.type === t);
+          if (m.length) return m[m.length - 1].id;
+        }
+        return null;
+      };
+      const built = incoming.map((c) => {
+        const l = JSON.parse(JSON.stringify(c)) as RenderLayer;
+        const from = l.assetId;
+        l.id = uniqueId();
+        l.assetId = assetId;
+        if (from && from !== assetId && l.type !== "ghost_blend") {
+          // null (inert ⚠) when this clip truly lacks an input —
+          // never a silent bleed from the old clip
+          l.sources = Object.fromEntries(Object.entries(l.sources).map(([k, v]) =>
+            [k, v ? latestOf(allowedFor(l.type, k, v)) : v]));
+        }
+        return l;
+      });
+      get().setLayers([...get().layers(), ...built]);
+      const name = get().assets.find((a) => a.id === assetId)?.name?.replace(/\.[^.]+$/, "") ?? "clip";
+      set({
+        selectedLayerId: built[built.length - 1].id,
+        selectedLayerIds: built.map((b) => b.id),
+        notice: `Pasted ${built.length} layer${built.length > 1 ? "s" : ""} onto ${name.slice(0, 24)}` +
+          (skipped ? ` · skipped ${skipped} ghost layer${skipped > 1 ? "s" : ""}` : ""),
+      });
+    } catch (e) {
+      set({ error: String(e) });
+    } finally {
+      set({ effectBusy: null });
+    }
   },
 
   deleteSelectedLayers: () => {
