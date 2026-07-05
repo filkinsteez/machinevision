@@ -175,6 +175,7 @@ export const LAYER_DEFS: LayerDef[] = [
     sources: [{ key: "detection", passTypes: ["detection"], required: true }],
     params: {
       boxStyle: { kind: "select", options: ["brackets", "box", "none"], default: "brackets", label: "Box Style" },
+      labelFormat: { kind: "select", options: ["label", "numbered"], default: "label", label: "Label Format" },
       lineWidth: { kind: "slider", min: 0.5, max: 6, step: 0.5, default: 1, label: "Stroke Width" },
       color: { kind: "color", default: "#FF5A00", label: "Box Color" },
       showLabel: { kind: "toggle", default: true, label: "Class Label" },
@@ -200,6 +201,21 @@ export const LAYER_DEFS: LayerDef[] = [
       dropout: { kind: "slider", min: 0, max: 0.95, step: 0.01, default: 0, label: "Dropout" },
       trail: { kind: "slider", min: 0, max: 24, step: 1, default: 0, label: "Trail Frames" },
       seed: { kind: "seed", default: 42, label: "Seed" },
+    },
+  },
+  {
+    type: "gaze_overlay",
+    label: "Gaze",
+    engine: "overlay",
+    description: "Where each face is looking — derived from the iris landmarks in a face pass.",
+    sources: [{ key: "landmarks", passTypes: ["face_landmarks"], required: true }],
+    params: {
+      style: { kind: "select", options: ["rays", "reticle", "both"], default: "rays", label: "Style" },
+      length: { kind: "slider", min: 1, max: 20, step: 0.5, default: 6, label: "Ray Length" },
+      lineWidth: { kind: "slider", min: 0.4, max: 4, step: 0.1, default: 1.2, label: "Line Width" },
+      color: { kind: "color", default: "#00C853", label: "Color" },
+      smooth: { kind: "slider", min: 0, max: 12, step: 1, default: 3, label: "Smoothing (frames)" },
+      showAngle: { kind: "toggle", default: true, label: "Angle Readout" },
     },
   },
   {

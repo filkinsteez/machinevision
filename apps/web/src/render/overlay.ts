@@ -24,8 +24,119 @@ export function drawOverlays(
     if (!layer.enabled) continue;
     if (layer.type === "object_labels") drawLabels(ctx, layer, frame, w, h);
     else if (layer.type === "landmark_overlay") drawLandmarks(ctx, layer, frame, w, h);
+    else if (layer.type === "gaze_overlay") drawGaze(ctx, layer, frame, w, h);
     else if (layer.type === "metadata_typography") drawMetadata(ctx, layer, passes, frame, w, h);
   }
+}
+
+// ---------------------------------------------------------------------- gaze
+// Derived live from the face pass's iris landmarks (points 468-477 of the
+// 478-point mesh) — real model output, not decoration.
+const EYES = [
+  { iris: 468, corners: [33, 133], lids: [159, 145] },   // camera-left eye
+  { iris: 473, corners: [362, 263], lids: [386, 374] },  // camera-right eye
+] as const;
+
+function gazeForEntity(pts: number[][], w: number, h: number, back: number,
+                       data: PassData, frame: number, entIdx: number) {
+  // average the iris offset over the last `back` frames for stability
+  const samples: { ox: number; oy: number; cx: number; cy: number; scale: number }[] = [];
+  for (let f = frame; f > frame - 1 - back && f >= 0; f--) {
+    const e = frameEntry(data, f);
+    const p = e?.entities?.[entIdx]?.points;
+    if (!p || p.length < 478) continue;
+    for (const eye of EYES) {
+      const [a, b] = eye.corners.map((i) => [p[i][0] * w, p[i][1] * h]);
+      const [u, d] = eye.lids.map((i) => [p[i][0] * w, p[i][1] * h]);
+      const iris = [p[eye.iris][0] * w, p[eye.iris][1] * h];
+      const cx = (a[0] + b[0]) / 2, cy = (a[1] + b[1]) / 2;
+      const ew = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      const eh = Math.max(Math.hypot(d[0] - u[0], d[1] - u[1]), ew * 0.35);
+      samples.push({
+        ox: (iris[0] - cx) / Math.max(ew, 1e-3),
+        oy: (iris[1] - (u[1] + d[1]) / 2) / Math.max(eh, 1e-3),
+        cx, cy, scale: ew,
+      });
+    }
+  }
+  if (!samples.length) return null;
+  const avg = (k: "ox" | "oy" | "cx" | "cy" | "scale") =>
+    samples.reduce((s, v) => s + v[k], 0) / samples.length;
+  // current-frame eye anchors (not smoothed) so the origin tracks the face
+  const cur = frameEntry(data, frame)?.entities?.[entIdx]?.points;
+  const anchors = cur && cur.length >= 478
+    ? EYES.map((eye) => {
+        const [a, b] = eye.corners.map((i) => [cur[i][0] * w, cur[i][1] * h]);
+        return { x: (a[0] + b[0]) / 2, y: (a[1] + b[1]) / 2 };
+      })
+    : [{ x: avg("cx"), y: avg("cy") }];
+  return { ox: avg("ox"), oy: avg("oy"), scale: avg("scale"), anchors };
+}
+
+function drawGaze(ctx: CanvasRenderingContext2D, layer: RenderLayer,
+                  frame: number, w: number, h: number) {
+  const passId = layer.sources.landmarks;
+  if (!passId) return;
+  const data = getPassJSON(passId);
+  if (!data) return;
+  const entry = frameEntry(data, frame);
+  if (!entry?.entities?.length) return;
+  const p = layer.params;
+  const color = String(p.color ?? "#00C853");
+  const lw = Number(p.lineWidth ?? 1.2);
+  const lengthMul = Number(p.length ?? 6);
+  const style = String(p.style ?? "rays");
+  const smooth = Number(p.smooth ?? 3);
+  const showAngle = p.showAngle !== false;
+
+  ctx.globalAlpha = layer.blend.opacity;
+  ctx.strokeStyle = color;
+  ctx.fillStyle = color;
+  ctx.lineWidth = lw;
+  ctx.font = MONO;
+
+  entry.entities.forEach((ent, ei) => {
+    if (!ent.points || ent.points.length < 478) return;
+    const g = gazeForEntity(ent.points, w, h, smooth, data, frame, ei);
+    if (!g) return;
+    // amplify subtle iris offsets into a readable direction
+    const dx = g.ox * 3.2, dy = g.oy * 4.0;
+    const len = g.scale * lengthMul;
+    const tips: { x: number; y: number }[] = [];
+    for (const a of g.anchors) {
+      const tx = a.x + dx * len, ty = a.y + dy * len;
+      tips.push({ x: tx, y: ty });
+      if (style !== "reticle") {
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(tx, ty);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(a.x, a.y, lw * 1.6, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    if (style !== "rays" && tips.length) {
+      const rx = tips.reduce((s, t) => s + t.x, 0) / tips.length;
+      const ry = tips.reduce((s, t) => s + t.y, 0) / tips.length;
+      const r = Math.max(g.scale * 0.35, 6);
+      ctx.beginPath();
+      ctx.arc(rx, ry, r, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(rx - r * 1.5, ry); ctx.lineTo(rx + r * 1.5, ry);
+      ctx.moveTo(rx, ry - r * 1.5); ctx.lineTo(rx, ry + r * 1.5);
+      ctx.stroke();
+    }
+    if (showAngle) {
+      const yaw = Math.atan2(dx, 1) * (180 / Math.PI);
+      const pitch = -Math.atan2(dy, 1) * (180 / Math.PI);
+      const a0 = g.anchors[0];
+      ctx.fillText(`GAZE ${yaw >= 0 ? "+" : ""}${yaw.toFixed(0)}° ${pitch >= 0 ? "+" : ""}${pitch.toFixed(0)}°`,
+                   a0.x + 8, a0.y - g.scale * 0.9);
+    }
+  });
+  ctx.globalAlpha = 1;
 }
 
 function drawLabels(ctx: CanvasRenderingContext2D, layer: RenderLayer,
@@ -44,10 +155,12 @@ function drawLabels(ctx: CanvasRenderingContext2D, layer: RenderLayer,
   const threshold = Number(p.threshold ?? 0.5);
   const boxStyle = String(p.boxStyle ?? "brackets");
   const showLabel = p.showLabel !== false;
+  const numbered = String(p.labelFormat ?? "label") === "numbered";
   ctx.globalAlpha = layer.blend.opacity;
   ctx.strokeStyle = color;
   ctx.lineWidth = lineWidth;
   ctx.font = `${fontSize}px Consolas, monospace`;
+  let visIdx = 0;
   for (const d of entry.detections) {
     if ((d.confidence ?? 1) < threshold) continue;
     const x = d.bbox[0] * w, y = d.bbox[1] * h;
@@ -64,9 +177,10 @@ function drawLabels(ctx: CanvasRenderingContext2D, layer: RenderLayer,
       ctx.stroke();
     }
     const bits: string[] = [];
-    if (showLabel) bits.push(d.label);
+    if (showLabel) bits.push(numbered ? `${visIdx}. ${d.label.toLowerCase()}` : d.label);
     if (p.showTrackId && d.trackId) bits.push(d.trackId.replace("track_", "#"));
     if (p.showConfidence && d.confidence != null) bits.push(d.confidence.toFixed(2));
+    visIdx++;
     if (bits.length) {
       const text = bits.join(" ");
       if (p.labelBackground) {

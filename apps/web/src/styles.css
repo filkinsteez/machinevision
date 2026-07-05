@@ -249,6 +249,22 @@ input[type="number"].seed { width: 72px; }
 .layer-list .inert { color: var(--orange); font-size: 11px; }
 .layer-add-list .needs-tag { font-size: 8px; color: var(--dim); letter-spacing: 0.06em; }
 
+/* effects rail — outcome-first, one click per model */
+.fx-group { display: flex; flex-direction: column; gap: 3px; padding: 8px 0; border-top: 1px solid var(--line); }
+.fx-group:first-of-type { border-top: none; }
+.fx-group .group-label { font-size: 9px; letter-spacing: 0.16em; color: var(--dim); display: flex; justify-content: space-between; align-items: center; margin-bottom: 3px; }
+.fx-row {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
+  padding: 6px 8px; text-align: left; width: 100%;
+  background: var(--panel2); border: 1px solid var(--line); border-radius: 2px;
+}
+.fx-row:hover:not(:disabled) { border-color: var(--orange); }
+.fx-row.busy { border-color: var(--blue); }
+.fx-name { font-size: 11px; color: var(--text); letter-spacing: 0.04em; display: flex; gap: 6px; align-items: center; }
+.fx-cached { color: var(--green); font-size: 8px; }
+.fx-tag { font-size: 9px; line-height: 1.35; }
+.fx-row.busy .fx-tag { color: var(--blue); }
+
 /* first-run onboarding card */
 .onboard-title { font-size: 15px; letter-spacing: 0.22em; color: var(--text); }
 .onboard-sub { font-size: 11px; color: var(--dim); margin-bottom: 6px; letter-spacing: 0.06em; }

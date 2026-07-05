@@ -1,22 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { audioEngine, ZERO_AUDIO, type AudioFrame } from "../render/audio";
 import { useStore } from "../store";
-import type { AudioReactiveConfig } from "../types";
-
-function Slider({
-  label, value, min, max, step, fixed, onChange,
-}: {
-  label: string; value: number; min: number; max: number; step: number; fixed: number;
-  onChange: (v: number) => void;
-}) {
-  return (
-    <label className="param">
-      <span>{label}<em>{value.toFixed(fixed)}</em></span>
-      <input type="range" min={min} max={max} step={step} value={value}
-             onChange={(e) => onChange(Number(e.target.value))} />
-    </label>
-  );
-}
 
 function Meter({ label, value }: { label: string; value: number }) {
   return (
@@ -33,13 +17,13 @@ export function AudioPanel() {
   const cfg = useStore((s) => s.audioConfig());
   const setAudioReactive = useStore((s) => s.setAudioReactive);
   const asset = useStore((s) => s.assets.find((a) => a.id === s.selectedAssetId) ?? null);
+  const playing = useStore((s) => s.playing);
   const isVideo = asset?.type === "video" && asset.status === "ready";
 
   const [levels, setLevels] = useState<AudioFrame>(ZERO_AUDIO);
   const cfgRef = useRef(cfg);
   cfgRef.current = cfg;
 
-  // own rAF for live meters; reads the (coalesced) engine sample
   useEffect(() => {
     let raf = 0;
     const tick = () => {
@@ -51,53 +35,43 @@ export function AudioPanel() {
     return () => cancelAnimationFrame(raf);
   }, []);
 
-  const set = (patch: Partial<AudioReactiveConfig>) => setAudioReactive(patch);
-
   return (
     <section className="panel grow scroll">
       <h3>AUDIO REACTIVE</h3>
       <div className="dim desc">
-        Drives effects from the selected video's audio. Bass shakes edges, energy
-        boosts flow and ASCII, beats kick the datamosh.
+        The track's own audio drives the effects — beats kick the datamosh, bass
+        pushes displacement, energy lifts intensity. Self-calibrating: any track,
+        no tuning.
       </div>
 
       <label className="param row">
-        <span>Enabled <span className="dim">(same as REACT in the transport)</span></span>
-        <input type="checkbox" checked={cfg.enabled} onChange={(e) => set({ enabled: e.target.checked })} />
+        <span>React to audio</span>
+        <input type="checkbox" checked={cfg.enabled} onChange={(e) => setAudioReactive({ enabled: e.target.checked })} />
       </label>
 
-      {!isVideo && <div className="dim empty">Select a video with sound to react to audio.</div>}
-      {isVideo && cfg.enabled && (
-        <div className="hint dim">Effects react while the video plays with sound. Press PLAY and un-mute if the meters are flat.</div>
+      <label className="param">
+        <span>Intensity<em>{cfg.sensitivity.toFixed(2)}×</em></span>
+        <input type="range" min={0} max={2.5} step={0.05} value={cfg.sensitivity}
+               title="How hard the audio drives the visuals. 1× = calibrated default."
+               onChange={(e) => setAudioReactive({ sensitivity: Number(e.target.value) })} />
+      </label>
+
+      {!isVideo && <div className="dim empty">Select a video with sound.</div>}
+      {isVideo && cfg.enabled && !playing && (
+        <div className="hint dim">Press PLAY — the meters and effects move with the sound.</div>
       )}
 
       <div className="param-group">
-        <span className="group-label">LIVE LEVELS</span>
+        <span className="group-label">LIVE SIGNAL</span>
         <Meter label="BASS" value={levels.bass} />
         <Meter label="MID" value={levels.mid} />
         <Meter label="TREB" value={levels.treble} />
-        <Meter label="LVL" value={levels.level} />
+        <Meter label="LEVEL" value={levels.level} />
         <Meter label="BEAT" value={levels.beat} />
-      </div>
-
-      <div className="param-group">
-        <span className="group-label">RESPONSE</span>
-        <Slider label="Sensitivity" value={cfg.sensitivity} min={0} max={3} step={0.05} fixed={2}
-                onChange={(v) => set({ sensitivity: v })} />
-        <Slider label="Smoothing" value={cfg.smoothing} min={0} max={0.98} step={0.01} fixed={2}
-                onChange={(v) => set({ smoothing: v })} />
-        <Slider label="Beat Amount" value={cfg.beatAmount} min={0} max={3} step={0.05} fixed={2}
-                onChange={(v) => set({ beatAmount: v })} />
-      </div>
-
-      <div className="param-group">
-        <span className="group-label">BAND GAINS</span>
-        <Slider label="Bass" value={cfg.bassGain} min={0} max={3} step={0.05} fixed={2}
-                onChange={(v) => set({ bassGain: v })} />
-        <Slider label="Mid" value={cfg.midGain} min={0} max={3} step={0.05} fixed={2}
-                onChange={(v) => set({ midGain: v })} />
-        <Slider label="Treble" value={cfg.trebleGain} min={0} max={3} step={0.05} fixed={2}
-                onChange={(v) => set({ trebleGain: v })} />
+        <div className="hint dim">
+          Bands are normalized against the track's own recent average (auto-gain) —
+          BEAT fires on real onsets, exports react identically to preview.
+        </div>
       </div>
     </section>
   );

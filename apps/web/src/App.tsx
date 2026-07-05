@@ -1,18 +1,18 @@
 import { useEffect, useState } from "react";
 import { AudioPanel } from "./components/AudioPanel";
+import { EffectsPanel } from "./components/EffectsPanel";
 import { ExportPanel } from "./components/ExportPanel";
 import { JobsBar } from "./components/JobsBar";
 import { LayersPanel } from "./components/LayersPanel";
 import { MediaPanel } from "./components/MediaPanel";
 import { ParamsPanel } from "./components/ParamsPanel";
 import { PassesPanel } from "./components/PassesPanel";
-import { PresetsPanel } from "./components/PresetsPanel";
 import { PreviewCanvas } from "./components/PreviewCanvas";
 import { Timeline } from "./components/Timeline";
 import { useStore } from "./store";
 
 type RightTab = "layer" | "audio" | "export";
-type LeftTab = "passes" | "presets";
+type LeftTab = "effects" | "lab";
 
 export default function App() {
   const boot = useStore((s) => s.boot);
@@ -20,7 +20,7 @@ export default function App() {
   const project = useStore((s) => s.project);
   const selectedLayerId = useStore((s) => s.selectedLayerId);
   const [rightTab, setRightTab] = useState<RightTab>("layer");
-  const [leftTab, setLeftTab] = useState<LeftTab>("passes");
+  const [leftTab, setLeftTab] = useState<LeftTab>("effects");
 
   useEffect(() => { boot().catch(console.error); }, [boot]);
 
@@ -49,10 +49,10 @@ export default function App() {
         <aside className="left">
           <MediaPanel />
           <div className="tabs">
-            <button className={leftTab === "passes" ? "active" : ""} onClick={() => setLeftTab("passes")}>ANALYZE</button>
-            <button className={leftTab === "presets" ? "active" : ""} onClick={() => setLeftTab("presets")}>PRESETS ★</button>
+            <button className={leftTab === "effects" ? "active" : ""} onClick={() => setLeftTab("effects")}>EFFECTS</button>
+            <button className={leftTab === "lab" ? "active" : ""} title="Advanced: prompt-driven analysis and raw pass management" onClick={() => setLeftTab("lab")}>LAB</button>
           </div>
-          {leftTab === "passes" ? <PassesPanel /> : <PresetsPanel />}
+          {leftTab === "effects" ? <EffectsPanel /> : <PassesPanel />}
         </aside>
         <main>
           <PreviewCanvas />

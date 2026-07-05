@@ -1,8 +1,9 @@
 import { create } from "zustand";
-import { layerDef, newLayer, uniqueId } from "./layers";
+import { defaultParams, layerDef, newLayer, uniqueId } from "./layers";
 import { api } from "./api";
 import { DEFAULT_AUDIO_CONFIG } from "./render/audio";
-import type { AudioReactiveConfig, Asset, ExportRecord, Job, Preset, Project, PromptPoint, RenderLayer, VisionPass } from "./types";
+import type { EffectDef } from "./effects";
+import type { AudioReactiveConfig, Asset, ExportRecord, Job, PassType, Preset, Project, PromptPoint, RenderLayer, VisionPass } from "./types";
 
 export type Tool = "select" | "click-prompt" | "box-prompt";
 
@@ -24,6 +25,7 @@ interface State {
   muted: boolean;
   baking: { active: boolean; progress: number } | null;
   error: string | null;
+  effectBusy: string | null;
 
   boot: () => Promise<void>;
   refresh: () => Promise<void>;
@@ -53,6 +55,8 @@ interface State {
   selectLayer: (id: string | null) => void;
   applyPreset: (preset: Preset) => void;
   applyPresetAuto: (preset: Preset) => Promise<void>;
+  ensurePassTypes: (types: PassType[]) => Promise<boolean>;
+  runEffect: (eff: EffectDef) => Promise<void>;
 
   audioConfig: () => AudioReactiveConfig;
   setAudioReactive: (patch: Partial<AudioReactiveConfig>) => void;
@@ -92,6 +96,7 @@ export const useStore = create<State>((set, get) => ({
   currentFrame: 0,
   muted: false,
   baking: null,
+  effectBusy: null,
   error: null,
 
   boot: async () => {
@@ -316,15 +321,29 @@ export const useStore = create<State>((set, get) => ({
     get().setLayers([...get().layers(), ...newLayers]);
   },
 
-  applyPresetAuto: async (preset) => {
+  // Generate any missing pass types for the selected asset and wait until ready.
+  // Passes are cached infrastructure — the user clicks outcomes, not models.
+  ensurePassTypes: async (types) => {
     const assetId = get().selectedAssetId;
-    if (!assetId) return;
+    if (!assetId) return false;
     const readyTypes = () => new Set(get().passes
       .filter((p) => p.assetId === assetId && p.status === "ready").map((p) => p.type));
-    const missing = preset.requiredPassTypes.filter((t) => !readyTypes().has(t));
-    // fire off the generator for each missing pass type (mask uses a zero-click text prompt)
+    const missing = types.filter((t) => !readyTypes().has(t));
     for (const t of missing) {
       if (t === "mask") await get().runSegmentText("the subject");
+      else if (t === "edge_matte") {
+        // derived from a mask — make sure the mask exists first
+        if (!readyTypes().has("mask")) {
+          await get().runSegmentText("the subject");
+          const dl = Date.now() + 180000;
+          while (Date.now() < dl && !readyTypes().has("mask")) {
+            await new Promise((r) => setTimeout(r, 1500));
+            await get().refresh();
+          }
+        }
+        const mask = get().passes.find((p) => p.assetId === assetId && p.status === "ready" && p.type === "mask");
+        if (mask) await get().runEdgeMatte(mask.id);
+      }
       else if (t === "optical_flow") await get().runFlow();
       else if (t === "depth" || t === "normals" || t === "body_parts") await get().runSapiens(t);
       else if (t === "face_landmarks") await get().runLandmarks("face");
@@ -332,13 +351,53 @@ export const useStore = create<State>((set, get) => ({
       else if (t === "hand_landmarks") await get().runLandmarks("hands");
       else if (t === "detection") await get().runDetect("the subject", 0.35);
     }
-    // poll until every required pass is ready (or give up), then apply
-    const deadline = Date.now() + 180000;
+    const deadline = Date.now() + 240000;
     while (Date.now() < deadline) {
       const have = readyTypes();
-      if (preset.requiredPassTypes.every((t) => have.has(t))) break;
+      if (types.every((t) => have.has(t))) return true;
       await new Promise((r) => setTimeout(r, 1500));
       await get().refresh();
+    }
+    return types.every((t) => readyTypes().has(t));
+  },
+
+  // One-click effect: surface a model as a finished, tunable layer.
+  runEffect: async (eff) => {
+    const assetId = get().selectedAssetId;
+    if (!assetId || get().effectBusy) return;
+    set({ effectBusy: eff.id });
+    try {
+      const ok = await get().ensurePassTypes(eff.ensure);
+      if (!ok) {
+        set({ error: `${eff.label}: analysis didn't finish — check the job bar and try again.` });
+        return;
+      }
+      const ready = get().passes.filter((p) => p.assetId === assetId && p.status === "ready");
+      const byType = (t: string) => {
+        const matches = ready.filter((p) => p.type === t);
+        return matches.length ? matches[matches.length - 1].id : null;
+      };
+      const built: RenderLayer[] = eff.layers.map((bp) => ({
+        id: uniqueId(),
+        type: bp.type,
+        name: bp.name,
+        enabled: true,
+        sources: Object.fromEntries(Object.entries(bp.sources).map(([k, t]) => [k, byType(t)])),
+        params: { ...(defaultParams(layerDef(bp.type)!) ?? {}), ...(bp.params ?? {}) },
+        blend: bp.blend ?? { mode: "normal", opacity: 1.0 },
+      }));
+      get().setLayers([...get().layers(), ...built]);
+      set({ selectedLayerId: built[built.length - 1].id });
+    } finally {
+      set({ effectBusy: null });
+    }
+  },
+
+  applyPresetAuto: async (preset) => {
+    const ok = await get().ensurePassTypes(preset.requiredPassTypes);
+    if (!ok) {
+      set({ error: `${preset.name}: analysis didn't finish — try again.` });
+      return;
     }
     get().applyPreset(preset);
   },
