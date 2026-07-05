@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useRef } from "react";
 import { useStore } from "../store";
 
 export function MediaPanel() {
@@ -8,35 +8,21 @@ export function MediaPanel() {
   const selectAsset = useStore((s) => s.selectAsset);
   const deleteAsset = useStore((s) => s.deleteAsset);
   const fileRef = useRef<HTMLInputElement>(null);
-  const [drag, setDrag] = useState(false);
-
-  const onDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    setDrag(false);
-    const file = e.dataTransfer.files[0];
-    if (file) upload(file);
-  }, [upload]);
 
   return (
     <section className="panel">
-      <h3>MEDIA</h3>
-      <div
-        className={`dropzone ${drag ? "drag" : ""}`}
-        onDragOver={(e) => { e.preventDefault(); setDrag(true); }}
-        onDragLeave={() => setDrag(false)}
-        onDrop={onDrop}
-        onClick={() => fileRef.current?.click()}
-      >
-        DROP IMAGE / VIDEO
-        <span className="dim">mp4 mov webm png jpg · ≤60s</span>
-        <input
-          ref={fileRef}
-          type="file"
-          accept="video/*,image/*"
-          hidden
-          onChange={(e) => { const f = e.target.files?.[0]; if (f) upload(f); e.target.value = ""; }}
-        />
-      </div>
+      <h3>
+        MEDIA
+        <button className="add" title="drop a file anywhere, or browse" onClick={() => fileRef.current?.click()}>+ ADD</button>
+      </h3>
+      <input
+        id="mv-file-input"
+        ref={fileRef}
+        type="file"
+        accept="video/*,image/*"
+        hidden
+        onChange={(e) => { const f = e.target.files?.[0]; if (f) upload(f); e.target.value = ""; }}
+      />
       <ul className="asset-list">
         {assets.map((a) => (
           <li
@@ -53,16 +39,15 @@ export function MediaPanel() {
               </div>
             </div>
             <button
-              title="delete asset and its passes"
+              title="delete"
               onClick={(e) => {
                 e.stopPropagation();
-                if (window.confirm(`Delete ${a.name} and all of its vision passes?`)) {
-                  deleteAsset(a.id);
-                }
+                if (window.confirm(`Delete ${a.name}?`)) deleteAsset(a.id);
               }}
             >✕</button>
           </li>
         ))}
+        {!assets.length && <li className="dim empty">drop a file anywhere</li>}
       </ul>
     </section>
   );

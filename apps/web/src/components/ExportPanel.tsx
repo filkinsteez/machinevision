@@ -49,12 +49,11 @@ export function ExportPanel() {
 
   return (
     <section className="panel grow scroll">
-      <h3>3 · EXPORT</h3>
+      <h3>EXPORT</h3>
 
       {/* PRIMARY: export exactly what the preview shows */}
       <div className="param-group">
         <span className="group-label">EXPORT VIDEO</span>
-        <div className="dim desc">Renders your layer stack exactly as shown in the preview, frame by frame.</div>
         <button
           className="go wide"
           disabled={!asset || asset.status !== "ready" || !!baking || !layers.length}
@@ -65,16 +64,15 @@ export function ExportPanel() {
             : `EXPORT ${isVideo ? "VIDEO" : "IMAGE"}`}
         </button>
         {baking && <div className="dim desc">{bakeFrames || "encoding…"}</div>}
-        {!layers.length && !baking && <div className="hint dim">Add a render layer first (right panel or a preset).</div>}
+        {!layers.length && !baking && <div className="hint dim">add an effect first</div>}
       </div>
 
       {/* ADVANCED: authentic codec datamosh */}
       <div className="param-group">
-        <span className="group-label">
-          AUTHENTIC DATAMOSH · ADVANCED
-          <button className="add" onClick={() => setShowMosh(!showMosh)}>{showMosh ? "×" : "OPEN"}</button>
+        <span className="group-label" title="Real MPEG-4 codec corruption composited through a mask — slower, glitchier, video only">
+          TRUE DATAMOSH
+          <button className="add" onClick={() => setShowMosh(!showMosh)}>{showMosh ? "×" : "+"}</button>
         </span>
-        <div className="dim desc">Real MPEG-4 codec corruption composited through a mask. Slower, glitchier, video only.</div>
         {showMosh && (
           <>
             <label className="param row">

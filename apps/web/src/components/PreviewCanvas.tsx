@@ -228,15 +228,12 @@ export function PreviewCanvas() {
 
   if (!asset) {
     return (
-      <div className="preview-empty">
-        <div className="onboard-title">MACHINE INDUSTRIES</div>
-        <div className="onboard-sub">Render what the machine sees.</div>
-        <ol className="onboard-steps">
-          <li><b>1 · Upload</b> an image or video (drop it in the Media panel, left)</li>
-          <li><b>2 · Analyze</b> — run a pass: mask, pose, depth, motion…</li>
-          <li><b>3 · Add a layer</b> that reads the pass, tune it, and export</li>
-        </ol>
-        <div className="onboard-tip dim">New here? Open <b>PRESETS ★</b> — one click generates everything and builds the look.</div>
+      <div
+        className="preview-empty clickable"
+        onClick={() => document.getElementById("mv-file-input")?.click()}
+      >
+        DROP A VIDEO ANYWHERE
+        <span className="dim">or click to browse</span>
       </div>
     );
   }

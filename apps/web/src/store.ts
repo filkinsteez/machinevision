@@ -26,6 +26,8 @@ interface State {
   baking: { active: boolean; progress: number } | null;
   error: string | null;
   effectBusy: string | null;
+  subjectPrompt: string;
+  setSubjectPrompt: (p: string) => void;
 
   boot: () => Promise<void>;
   refresh: () => Promise<void>;
@@ -97,6 +99,8 @@ export const useStore = create<State>((set, get) => ({
   muted: false,
   baking: null,
   effectBusy: null,
+  subjectPrompt: "",
+  setSubjectPrompt: (subjectPrompt) => set({ subjectPrompt }),
   error: null,
 
   boot: async () => {
@@ -329,12 +333,18 @@ export const useStore = create<State>((set, get) => ({
     const readyTypes = () => new Set(get().passes
       .filter((p) => p.assetId === assetId && p.status === "ready").map((p) => p.type));
     const missing = types.filter((t) => !readyTypes().has(t));
+    // subject: canvas click/box selection wins; then the typed prompt; then default
+    const prompt = get().subjectPrompt.trim() || "the subject";
+    const makeMask = async () => {
+      if (get().promptPoints.length || get().promptBox) await get().runSegment();
+      else await get().runSegmentText(prompt);
+    };
     for (const t of missing) {
-      if (t === "mask") await get().runSegmentText("the subject");
+      if (t === "mask") await makeMask();
       else if (t === "edge_matte") {
         // derived from a mask — make sure the mask exists first
         if (!readyTypes().has("mask")) {
-          await get().runSegmentText("the subject");
+          await makeMask();
           const dl = Date.now() + 180000;
           while (Date.now() < dl && !readyTypes().has("mask")) {
             await new Promise((r) => setTimeout(r, 1500));
@@ -349,7 +359,7 @@ export const useStore = create<State>((set, get) => ({
       else if (t === "face_landmarks") await get().runLandmarks("face");
       else if (t === "pose_landmarks") await get().runLandmarks("pose");
       else if (t === "hand_landmarks") await get().runLandmarks("hands");
-      else if (t === "detection") await get().runDetect("the subject", 0.35);
+      else if (t === "detection") await get().runDetect(prompt, 0.35);
     }
     const deadline = Date.now() + 240000;
     while (Date.now() < deadline) {

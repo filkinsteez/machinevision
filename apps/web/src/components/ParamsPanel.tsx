@@ -105,17 +105,16 @@ export function ParamsPanel() {
 
   return (
     <section className="panel grow scroll">
-      <h3>{def.label.toUpperCase()}</h3>
-      <div className="dim desc">{def.description}</div>
+      <h3 title={def.description}>{def.label.toUpperCase()}</h3>
 
       {missing.length > 0 && (
         <div className="warn-banner">
-          ⚠ Not rendering yet — connect a {missing.map((m) => sourceLabel(m)).join(" and ")} below.
+          ⚠ needs {missing.map((m) => sourceLabel(m)).join(" + ")}
         </div>
       )}
 
       <div className="param-group">
-        <span className="group-label">INPUT (which pass feeds this layer)</span>
+        <span className="group-label">INPUT</span>
         {def.sources.map((src) => {
           const candidates = passes.filter((p) => src.passTypes.includes(p.type));
           const need = passTypesLabel(src.passTypes);

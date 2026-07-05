@@ -250,26 +250,32 @@ input[type="number"].seed { width: 72px; }
 .layer-add-list .needs-tag { font-size: 8px; color: var(--dim); letter-spacing: 0.06em; }
 
 /* effects rail — outcome-first, one click per model */
-.fx-group { display: flex; flex-direction: column; gap: 3px; padding: 8px 0; border-top: 1px solid var(--line); }
+.fx-group { display: flex; flex-direction: column; gap: 4px; padding: 8px 0; border-top: 1px solid var(--line); }
 .fx-group:first-of-type { border-top: none; }
-.fx-group .group-label { font-size: 9px; letter-spacing: 0.16em; color: var(--dim); display: flex; justify-content: space-between; align-items: center; margin-bottom: 3px; }
-.fx-row {
-  display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
-  padding: 6px 8px; text-align: left; width: 100%;
+.fx-group .group-label { font-size: 9px; letter-spacing: 0.16em; color: var(--dim); display: flex; justify-content: space-between; align-items: center; }
+.fx-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+.fx-chip {
+  position: relative; padding: 8px 6px; text-align: center;
   background: var(--panel2); border: 1px solid var(--line); border-radius: 2px;
+  font-size: 11px; color: var(--text); letter-spacing: 0.05em;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.fx-row:hover:not(:disabled) { border-color: var(--orange); }
-.fx-row.busy { border-color: var(--blue); }
-.fx-name { font-size: 11px; color: var(--text); letter-spacing: 0.04em; display: flex; gap: 6px; align-items: center; }
-.fx-cached { color: var(--green); font-size: 8px; }
-.fx-tag { font-size: 9px; line-height: 1.35; }
-.fx-row.busy .fx-tag { color: var(--blue); }
+.fx-chip:hover:not(:disabled) { border-color: var(--orange); color: var(--orange); }
+.fx-chip.busy { border-color: var(--blue); }
+.fx-chip .fx-stage { font-size: 9px; color: var(--blue); }
+.fx-cached { position: absolute; top: 3px; right: 4px; color: var(--green); font-size: 7px; }
 
-/* first-run onboarding card */
-.onboard-title { font-size: 15px; letter-spacing: 0.22em; color: var(--text); }
-.onboard-sub { font-size: 11px; color: var(--dim); margin-bottom: 6px; letter-spacing: 0.06em; }
-.onboard-steps { list-style: none; text-align: left; display: flex; flex-direction: column; gap: 8px; margin: 4px 0; max-width: 380px; }
-.onboard-steps li { font-size: 11px; color: var(--dim); line-height: 1.4; }
-.onboard-steps b { color: var(--orange); letter-spacing: 0.04em; }
-.onboard-tip { font-size: 10px; margin-top: 8px; max-width: 380px; line-height: 1.5; }
-.onboard-tip b { color: var(--green); }
+/* subject prompt + canvas selection tools */
+.subject-row { display: flex; gap: 4px; align-items: center; margin-bottom: 4px; }
+.subject-row input { flex: 1; min-width: 0; }
+.subject-row button { padding: 3px 8px; font-size: 12px; }
+
+/* whole-window drop */
+.drop-overlay {
+  position: fixed; inset: 0; z-index: 100;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(11, 12, 13, 0.85); border: 2px dashed var(--orange);
+  color: var(--orange); font-size: 16px; letter-spacing: 0.3em;
+  pointer-events: none;
+}
+.preview-empty.clickable { cursor: pointer; }

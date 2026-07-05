@@ -37,12 +37,7 @@ export function AudioPanel() {
 
   return (
     <section className="panel grow scroll">
-      <h3>AUDIO REACTIVE</h3>
-      <div className="dim desc">
-        The track's own audio drives the effects — beats kick the datamosh, bass
-        pushes displacement, energy lifts intensity. Self-calibrating: any track,
-        no tuning.
-      </div>
+      <h3 title="The track's own audio drives the effects — self-calibrating, no tuning">AUDIO REACTIVE</h3>
 
       <label className="param row">
         <span>React to audio</span>
@@ -56,9 +51,9 @@ export function AudioPanel() {
                onChange={(e) => setAudioReactive({ sensitivity: Number(e.target.value) })} />
       </label>
 
-      {!isVideo && <div className="dim empty">Select a video with sound.</div>}
+      {!isVideo && <div className="dim empty">select a video with sound</div>}
       {isVideo && cfg.enabled && !playing && (
-        <div className="hint dim">Press PLAY — the meters and effects move with the sound.</div>
+        <div className="hint dim">press PLAY</div>
       )}
 
       <div className="param-group">
@@ -68,10 +63,6 @@ export function AudioPanel() {
         <Meter label="TREB" value={levels.treble} />
         <Meter label="LEVEL" value={levels.level} />
         <Meter label="BEAT" value={levels.beat} />
-        <div className="hint dim">
-          Bands are normalized against the track's own recent average (auto-gain) —
-          BEAT fires on real onsets, exports react identically to preview.
-        </div>
       </div>
     </section>
   );

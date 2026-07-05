@@ -59,10 +59,9 @@ export function LayersPanel() {
   return (
     <section className="panel grow">
       <h3>
-        2 · EFFECT LAYERS
+        LAYERS
         <button className="add" onClick={() => setAdding(!adding)}>{adding ? "×" : "+ ADD"}</button>
       </h3>
-      <div className="dim desc">Stack effects that read your passes. Top layer draws on top.</div>
       {adding && (
         <ul className="layer-add-list">
           {LAYER_DEFS.map((d) => {
@@ -123,7 +122,7 @@ export function LayersPanel() {
             }}>✕</button>
           </li>
         ))}
-        {!layers.length && <li className="dim empty">No effects yet. Click + LAYER on a pass, hit + ADD, or apply a preset.</li>}
+        {!layers.length && <li className="dim empty">pick an effect on the left</li>}
       </ul>
     </section>
   );

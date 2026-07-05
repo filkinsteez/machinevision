@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AudioPanel } from "./components/AudioPanel";
 import { EffectsPanel } from "./components/EffectsPanel";
 import { ExportPanel } from "./components/ExportPanel";
@@ -6,21 +6,21 @@ import { JobsBar } from "./components/JobsBar";
 import { LayersPanel } from "./components/LayersPanel";
 import { MediaPanel } from "./components/MediaPanel";
 import { ParamsPanel } from "./components/ParamsPanel";
-import { PassesPanel } from "./components/PassesPanel";
 import { PreviewCanvas } from "./components/PreviewCanvas";
 import { Timeline } from "./components/Timeline";
 import { useStore } from "./store";
 
 type RightTab = "layer" | "audio" | "export";
-type LeftTab = "effects" | "lab";
 
 export default function App() {
   const boot = useStore((s) => s.boot);
   const refresh = useStore((s) => s.refresh);
+  const upload = useStore((s) => s.upload);
   const project = useStore((s) => s.project);
   const selectedLayerId = useStore((s) => s.selectedLayerId);
   const [rightTab, setRightTab] = useState<RightTab>("layer");
-  const [leftTab, setLeftTab] = useState<LeftTab>("effects");
+  const [dropping, setDropping] = useState(false);
+  const dragDepth = useRef(0);
 
   useEffect(() => { boot().catch(console.error); }, [boot]);
 
@@ -38,8 +38,44 @@ export default function App() {
 
   useEffect(() => { if (selectedLayerId) setRightTab("layer"); }, [selectedLayerId]);
 
+  // drop media anywhere in the window
+  useEffect(() => {
+    const hasFiles = (e: DragEvent) => [...(e.dataTransfer?.types ?? [])].includes("Files");
+    const enter = (e: DragEvent) => {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      dragDepth.current++;
+      setDropping(true);
+    };
+    const over = (e: DragEvent) => { if (hasFiles(e)) e.preventDefault(); };
+    const leave = (e: DragEvent) => {
+      if (!hasFiles(e)) return;
+      dragDepth.current = Math.max(dragDepth.current - 1, 0);
+      if (dragDepth.current === 0) setDropping(false);
+    };
+    const drop = (e: DragEvent) => {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      dragDepth.current = 0;
+      setDropping(false);
+      const file = e.dataTransfer?.files?.[0];
+      if (file) upload(file);
+    };
+    window.addEventListener("dragenter", enter);
+    window.addEventListener("dragover", over);
+    window.addEventListener("dragleave", leave);
+    window.addEventListener("drop", drop);
+    return () => {
+      window.removeEventListener("dragenter", enter);
+      window.removeEventListener("dragover", over);
+      window.removeEventListener("dragleave", leave);
+      window.removeEventListener("drop", drop);
+    };
+  }, [upload]);
+
   return (
     <div className="app">
+      {dropping && <div className="drop-overlay">DROP TO UPLOAD</div>}
       <header>
         <span className="logo">MACHINE INDUSTRIES</span>
         <span className="dim">{project?.name ?? "…"}</span>
@@ -48,11 +84,7 @@ export default function App() {
       <div className="cols">
         <aside className="left">
           <MediaPanel />
-          <div className="tabs">
-            <button className={leftTab === "effects" ? "active" : ""} onClick={() => setLeftTab("effects")}>EFFECTS</button>
-            <button className={leftTab === "lab" ? "active" : ""} title="Advanced: prompt-driven analysis and raw pass management" onClick={() => setLeftTab("lab")}>LAB</button>
-          </div>
-          {leftTab === "effects" ? <EffectsPanel /> : <PassesPanel />}
+          <EffectsPanel />
         </aside>
         <main>
           <PreviewCanvas />
