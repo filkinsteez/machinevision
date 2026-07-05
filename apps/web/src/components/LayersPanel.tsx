@@ -25,7 +25,10 @@ export function LayersPanel() {
   const setLayers = useStore((s) => s.setLayers);
   const updateLayer = useStore((s) => s.updateLayer);
   const selected = useStore((s) => s.selectedLayerId);
+  const selectedIds = useStore(useShallow((s) => s.selectedLayerIds));
   const selectLayer = useStore((s) => s.selectLayer);
+  const toggleLayerSelection = useStore((s) => s.toggleLayerSelection);
+  const setLayerSelection = useStore((s) => s.setLayerSelection);
   const [adding, setAdding] = useState(false);
   const [dragging, setDragging] = useState<string | null>(null);
   const [over, setOver] = useState<{ idx: number; below: boolean } | null>(null);
@@ -46,22 +49,37 @@ export function LayersPanel() {
     setAdding(false);
   };
 
+  // click / ctrl+click / shift+click selection
+  const rowClick = (e: React.MouseEvent, l: RenderLayer) => {
+    if (e.ctrlKey || e.metaKey) { toggleLayerSelection(l.id); return; }
+    if (e.shiftKey && selected) {
+      const a = layers.findIndex((x) => x.id === selected);
+      const b = layers.findIndex((x) => x.id === l.id);
+      if (a >= 0 && b >= 0) {
+        const ids = layers.slice(Math.min(a, b), Math.max(a, b) + 1).map((x) => x.id);
+        setLayerSelection(ids, l.id);
+        return;
+      }
+    }
+    selectLayer(l.id);
+  };
+
   const hoverHalf = (e: React.DragEvent): boolean => {
     const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
     return e.clientY > r.top + r.height / 2; // true = insert below this row
   };
 
+  // dragging a selected row moves the whole selection as a block
   const drop = (e: React.DragEvent, idx: number, below: boolean) => {
     const id = e.dataTransfer.getData("text/plain");
-    const from = layers.findIndex((l) => l.id === id);
-    let insertAt = idx + (below ? 1 : 0);
-    if (from < 0) return;
-    if (insertAt > from) insertAt -= 1;
-    if (insertAt === from) return;
-    const next = [...layers];
-    const [moved] = next.splice(from, 1);
-    next.splice(insertAt, 0, moved);
-    commit(next);
+    const moving = new Set(
+      selectedIds.includes(id) && selectedIds.length > 1 ? selectedIds : [id]);
+    const target = layers[idx];
+    if (!target || moving.has(target.id) || !layers.some((l) => moving.has(l.id))) return;
+    const rest = layers.filter((l) => !moving.has(l.id));
+    const movedBlock = layers.filter((l) => moving.has(l.id));
+    const insertAt = rest.findIndex((l) => l.id === target.id) + (below ? 1 : 0);
+    commit([...rest.slice(0, insertAt), ...movedBlock, ...rest.slice(insertAt)]);
   };
 
   return (
@@ -90,12 +108,13 @@ export function LayersPanel() {
             key={l.id}
             draggable
             className={[
-              l.id === selected ? "sel" : "",
+              selectedIds.includes(l.id) ? "sel" : "",
               dragging === l.id ? "dragging" : "",
               over?.idx === i && dragging && dragging !== l.id
                 ? (over.below ? "drop-below" : "drop-above") : "",
             ].join(" ")}
-            onClick={() => selectLayer(l.id)}
+            onClick={(e) => rowClick(e, l)}
+            onMouseDown={(e) => { if (e.shiftKey) e.preventDefault(); }}
             onDragStart={(e) => {
               setDragging(l.id);
               e.dataTransfer.effectAllowed = "move";
@@ -126,7 +145,7 @@ export function LayersPanel() {
             <button title="delete" onClick={(e) => {
               e.stopPropagation();
               commit(layers.filter((x) => x.id !== l.id));
-              if (selected === l.id) selectLayer(null);
+              if (selectedIds.includes(l.id)) toggleLayerSelection(l.id);
             }}>✕</button>
           </li>
         ))}

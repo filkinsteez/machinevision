@@ -43,6 +43,34 @@ export default function App() {
 
   useEffect(() => { if (selectedLayerId) setRightTab("layer"); }, [selectedLayerId]);
 
+  // layer-stack hotkeys: Ctrl+Z/Y undo/redo, Ctrl+C/V copy/paste, Delete
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (t?.closest?.('input, textarea, select, [contenteditable="true"]')) return;
+      const s = useStore.getState();
+      const mod = e.ctrlKey || e.metaKey;
+      const k = e.key.toLowerCase();
+      if (mod && k === "z") {
+        e.preventDefault();
+        if (e.shiftKey) s.redo(); else s.undo();
+      } else if (mod && k === "y") {
+        e.preventDefault();
+        s.redo();
+      } else if (mod && k === "c") {
+        if (window.getSelection()?.toString()) return; // native text copy wins
+        if (s.selectedLayerIds.length) { e.preventDefault(); s.copyLayers(); }
+      } else if (mod && k === "v") {
+        s.pasteLayers();
+      } else if ((e.key === "Delete" || e.key === "Backspace") && s.selectedLayerIds.length) {
+        e.preventDefault();
+        s.deleteSelectedLayers();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
   // drop media anywhere in the window
   useEffect(() => {
     const hasFiles = (e: DragEvent) => [...(e.dataTransfer?.types ?? [])].includes("Files");

@@ -16,6 +16,7 @@ interface State {
   presets: Preset[];
   selectedAssetId: string | null;
   selectedLayerId: string | null;
+  selectedLayerIds: string[];
   visiblePassId: string | null;
   tool: Tool;
   promptPoints: PromptPoint[];
@@ -56,9 +57,17 @@ interface State {
   layers: () => RenderLayer[];
   /** layers belonging to the selected asset (legacy unstamped layers included) */
   assetLayers: () => RenderLayer[];
-  setLayers: (layers: RenderLayer[]) => void;
+  /** record=false skips undo history (migrations, prunes, undo/redo itself) */
+  setLayers: (layers: RenderLayer[], record?: boolean) => void;
   updateLayer: (id: string, patch: Partial<RenderLayer>) => void;
   selectLayer: (id: string | null) => void;
+  toggleLayerSelection: (id: string) => void;
+  setLayerSelection: (ids: string[], primary: string | null) => void;
+  undo: () => void;
+  redo: () => void;
+  copyLayers: () => void;
+  pasteLayers: () => void;
+  deleteSelectedLayers: () => void;
   applyPreset: (preset: Preset) => void;
   applyPresetAuto: (preset: Preset) => Promise<void>;
   ensurePassTypes: (types: PassType[]) => Promise<boolean>;
@@ -73,6 +82,14 @@ interface State {
   setBaking: (b: { active: boolean; progress: number } | null) => void;
   setError: (e: string | null) => void;
 }
+
+// undo history: snapshots of the whole layer stack. Bursts within 800ms
+// coalesce into one step so a slider drag is a single undo, not hundreds.
+const undoStack: RenderLayer[][] = [];
+const redoStack: RenderLayer[][] = [];
+let lastRecordAt = 0;
+// layer clipboard (in-app, survives clip switches; not the OS clipboard)
+let layerClipboard: RenderLayer[] = [];
 
 let saveTimer: number | undefined;
 function debouncedSave(project: Project) {
@@ -94,6 +111,7 @@ export const useStore = create<State>((set, get) => ({
   presets: [],
   selectedAssetId: null,
   selectedLayerId: null,
+  selectedLayerIds: [],
   visiblePassId: null,
   tool: "select",
   promptPoints: [],
@@ -141,7 +159,7 @@ export const useStore = create<State>((set, get) => ({
       if (owner) { changed = true; return { ...l, assetId: owner }; }
       return l;
     });
-    if (changed) get().setLayers(stamped);
+    if (changed) get().setLayers(stamped, false);
   },
 
   selectAsset: (id) => set({ selectedAssetId: id, promptPoints: [], promptBox: null, currentFrame: 0, playing: false }),
@@ -186,7 +204,7 @@ export const useStore = create<State>((set, get) => ({
         sources: Object.fromEntries(entries.map(([k, v]) => [k, v && valid.has(v) ? v : null])),
       };
     });
-    if (changed) get().setLayers(next);
+    if (changed) get().setLayers(next, false);
   },
 
   setTool: (tool) => set({ tool }),
@@ -303,7 +321,7 @@ export const useStore = create<State>((set, get) => ({
       if (src.passTypes.includes(pass.type)) layer.sources[src.key] = pass.id;
     }
     get().setLayers([...get().layers(), layer]);
-    set({ selectedLayerId: layer.id, visiblePassId: null });
+    set({ selectedLayerId: layer.id, selectedLayerIds: [layer.id], visiblePassId: null });
   },
 
   layers: () => get().project?.renderLayers ?? [],
@@ -313,9 +331,18 @@ export const useStore = create<State>((set, get) => ({
     return get().layers().filter((l) => !l.assetId || l.assetId === sel);
   },
 
-  setLayers: (layers) => {
+  setLayers: (layers, record = true) => {
     const project = get().project;
     if (!project) return;
+    if (record) {
+      const now = Date.now();
+      if (now - lastRecordAt > 800) {
+        undoStack.push(project.renderLayers);
+        if (undoStack.length > 60) undoStack.shift();
+        redoStack.length = 0;
+      }
+      lastRecordAt = now;
+    }
     const next = { ...project, renderLayers: layers };
     set({ project: next });
     debouncedSave(next);
@@ -326,7 +353,97 @@ export const useStore = create<State>((set, get) => ({
     get().setLayers(layers);
   },
 
-  selectLayer: (selectedLayerId) => set({ selectedLayerId }),
+  selectLayer: (selectedLayerId) =>
+    set({ selectedLayerId, selectedLayerIds: selectedLayerId ? [selectedLayerId] : [] }),
+
+  toggleLayerSelection: (id) => set((s) => {
+    const has = s.selectedLayerIds.includes(id);
+    const ids = has ? s.selectedLayerIds.filter((x) => x !== id) : [...s.selectedLayerIds, id];
+    return { selectedLayerIds: ids, selectedLayerId: has ? (ids[ids.length - 1] ?? null) : id };
+  }),
+
+  setLayerSelection: (ids, primary) => set({ selectedLayerIds: ids, selectedLayerId: primary }),
+
+  undo: () => {
+    const prev = undoStack.pop();
+    if (!prev) return;
+    redoStack.push(get().layers());
+    get().setLayers(prev, false);
+    lastRecordAt = 0;
+    const alive = new Set(prev.map((l) => l.id));
+    set((s) => ({
+      selectedLayerIds: s.selectedLayerIds.filter((i) => alive.has(i)),
+      selectedLayerId: s.selectedLayerId && alive.has(s.selectedLayerId) ? s.selectedLayerId : null,
+    }));
+  },
+
+  redo: () => {
+    const next = redoStack.pop();
+    if (!next) return;
+    undoStack.push(get().layers());
+    get().setLayers(next, false);
+    lastRecordAt = 0;
+    const alive = new Set(next.map((l) => l.id));
+    set((s) => ({
+      selectedLayerIds: s.selectedLayerIds.filter((i) => alive.has(i)),
+      selectedLayerId: s.selectedLayerId && alive.has(s.selectedLayerId) ? s.selectedLayerId : null,
+    }));
+  },
+
+  copyLayers: () => {
+    const sel = new Set(get().selectedLayerIds);
+    if (!sel.size) return;
+    layerClipboard = get().layers().filter((l) => sel.has(l.id))
+      .map((l) => JSON.parse(JSON.stringify(l)) as RenderLayer);
+    const n = layerClipboard.length;
+    set({ notice: `Copied ${n} layer${n > 1 ? "s" : ""} — select a clip and Ctrl+V` });
+  },
+
+  pasteLayers: () => {
+    if (!layerClipboard.length) return;
+    const assetId = get().selectedAssetId;
+    if (!assetId) return;
+    const passType = new Map(get().passes.map((p) => [p.id, p.type]));
+    const ready = get().passes.filter((p) => p.assetId === assetId && p.status === "ready");
+    const latestOfType = (t: string) => {
+      const m = ready.filter((p) => p.type === t);
+      return m.length ? m[m.length - 1].id : null;
+    };
+    const built = layerClipboard.map((c) => {
+      const l = JSON.parse(JSON.stringify(c)) as RenderLayer;
+      const from = l.assetId;
+      l.id = uniqueId();
+      l.assetId = assetId;
+      if (l.type === "ghost_blend") {
+        // blending a clip through itself is invisible — haunt the clip it came from
+        if (l.params?.donorAssetId === assetId && from && from !== assetId) {
+          l.params = { ...l.params, donorAssetId: from };
+        }
+      } else if (from && from !== assetId) {
+        // re-route inputs to this clip's own analysis when it exists;
+        // otherwise keep the source clip's pass (renders ghost-style)
+        l.sources = Object.fromEntries(Object.entries(l.sources).map(([k, v]) => {
+          const t = v ? passType.get(v) : null;
+          return [k, (t ? latestOfType(t) : null) ?? v];
+        }));
+      }
+      return l;
+    });
+    get().setLayers([...get().layers(), ...built]);
+    const name = get().assets.find((a) => a.id === assetId)?.name?.replace(/\.[^.]+$/, "") ?? "clip";
+    set({
+      selectedLayerId: built[built.length - 1].id,
+      selectedLayerIds: built.map((b) => b.id),
+      notice: `Pasted ${built.length} layer${built.length > 1 ? "s" : ""} onto ${name.slice(0, 24)}`,
+    });
+  },
+
+  deleteSelectedLayers: () => {
+    const sel = new Set(get().selectedLayerIds);
+    if (!sel.size) return;
+    get().setLayers(get().layers().filter((l) => !sel.has(l.id)));
+    set({ selectedLayerId: null, selectedLayerIds: [] });
+  },
 
   applyPreset: (preset) => {
     const { passes, selectedAssetId } = get();
@@ -429,7 +546,7 @@ export const useStore = create<State>((set, get) => ({
           blend: bp.blend ?? { mode: "normal", opacity: 1.0 },
         }));
         get().setLayers([...get().layers(), ...built]);
-        set({ selectedLayerId: built[built.length - 1].id });
+        set({ selectedLayerId: built[built.length - 1].id, selectedLayerIds: built.map((b) => b.id) });
         return;
       }
       if (eff.special === "ghost") {
@@ -499,7 +616,7 @@ export const useStore = create<State>((set, get) => ({
           return;
         }
         get().setLayers([...get().layers(), ...built]);
-        set({ selectedLayerId: built[built.length - 1].id });
+        set({ selectedLayerId: built[built.length - 1].id, selectedLayerIds: built.map((b) => b.id) });
         return;
       }
       const ok = await get().ensurePassTypes(eff.ensure);
@@ -523,7 +640,7 @@ export const useStore = create<State>((set, get) => ({
         blend: bp.blend ?? { mode: "normal", opacity: 1.0 },
       }));
       get().setLayers([...get().layers(), ...built]);
-      set({ selectedLayerId: built[built.length - 1].id });
+      set({ selectedLayerId: built[built.length - 1].id, selectedLayerIds: built.map((b) => b.id) });
     } finally {
       set({ effectBusy: null });
     }
