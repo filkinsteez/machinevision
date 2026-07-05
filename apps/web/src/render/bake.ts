@@ -57,7 +57,17 @@ export async function bakeExport(opts: {
     ctx.drawImage(overlayCanvas, 0, 0);
     const blob = await new Promise<Blob>((resolve, reject) =>
       out.toBlob((b) => (b ? resolve(b) : reject(new Error("toBlob failed"))), "image/png"));
-    await api.uploadBakeFrame(sessionId, f, blob);
+    // transient network hiccups over hundreds of uploads shouldn't kill a bake
+    let attempt = 0;
+    for (;;) {
+      try {
+        await api.uploadBakeFrame(sessionId, f, blob);
+        break;
+      } catch (e) {
+        if (++attempt >= 3) throw e;
+        await new Promise((r) => setTimeout(r, 600 * attempt));
+      }
+    }
     onProgress((f + 1) / frameCount);
   }
   const r = await api.finalizeBake(sessionId, projectId, fps, asset.type === "video" ? "video" : "image", asset.id);

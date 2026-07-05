@@ -21,7 +21,8 @@ export function EffectsPanel() {
   const passes = useStore(useShallow((s) => s.passes.filter((p) => p.assetId === s.selectedAssetId)));
   const applyPreset = useStore((s) => s.applyPreset);
   const applyPresetAuto = useStore((s) => s.applyPresetAuto);
-  const layers = useStore(useShallow((s) => s.project?.renderLayers ?? []));
+  const layers = useStore(useShallow((s) =>
+    (s.project?.renderLayers ?? []).filter((l) => !l.assetId || l.assetId === s.selectedAssetId)));
   const subjectPrompt = useStore((s) => s.subjectPrompt);
   const setSubjectPrompt = useStore((s) => s.setSubjectPrompt);
   const tool = useStore((s) => s.tool);

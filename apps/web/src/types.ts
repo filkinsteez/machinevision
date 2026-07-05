@@ -64,6 +64,9 @@ export interface RenderLayer {
   type: string;
   name: string;
   enabled: boolean;
+  /** which asset this layer belongs to — layers are per-clip, like any editor.
+   * null/undefined = legacy layer, shown until migration stamps it. */
+  assetId?: string | null;
   sources: Record<string, string | null>;
   params: Record<string, number | string | boolean | string[]>;
   blend: { mode: string; opacity: number };

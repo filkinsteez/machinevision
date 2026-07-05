@@ -54,6 +54,8 @@ interface State {
   addLayerForPass: (pass: VisionPass) => void;
 
   layers: () => RenderLayer[];
+  /** layers belonging to the selected asset (legacy unstamped layers included) */
+  assetLayers: () => RenderLayer[];
   setLayers: (layers: RenderLayer[]) => void;
   updateLayer: (id: string, patch: Partial<RenderLayer>) => void;
   selectLayer: (id: string | null) => void;
@@ -130,6 +132,16 @@ export const useStore = create<State>((set, get) => ({
       api.listExports(project.id),
     ]);
     set({ assets, passes, jobs, exports });
+    // migration: stamp legacy layers with the asset that owns their routed passes
+    const passOwner = new Map(passes.map((p) => [p.id, p.assetId]));
+    let changed = false;
+    const stamped = get().layers().map((l) => {
+      if (l.assetId) return l;
+      const owner = Object.values(l.sources).map((v) => v && passOwner.get(v)).find(Boolean);
+      if (owner) { changed = true; return { ...l, assetId: owner }; }
+      return l;
+    });
+    if (changed) get().setLayers(stamped);
   },
 
   selectAsset: (id) => set({ selectedAssetId: id, promptPoints: [], promptBox: null, currentFrame: 0, playing: false }),
@@ -286,6 +298,7 @@ export const useStore = create<State>((set, get) => ({
     if (!def) return;
     const layer = newLayer(def);
     layer.name = `${def.label}: ${pass.name}`;
+    layer.assetId = pass.assetId;
     for (const src of def.sources) {
       if (src.passTypes.includes(pass.type)) layer.sources[src.key] = pass.id;
     }
@@ -294,6 +307,11 @@ export const useStore = create<State>((set, get) => ({
   },
 
   layers: () => get().project?.renderLayers ?? [],
+
+  assetLayers: () => {
+    const sel = get().selectedAssetId;
+    return get().layers().filter((l) => !l.assetId || l.assetId === sel);
+  },
 
   setLayers: (layers) => {
     const project = get().project;
@@ -323,6 +341,7 @@ export const useStore = create<State>((set, get) => ({
       ...l,
       id: uniqueId(),
       enabled: l.enabled ?? true,
+      assetId: selectedAssetId,
       blend: l.blend ?? { mode: "normal", opacity: 1.0 },
       sources: Object.fromEntries(Object.entries(l.sources).map(([k, v]) => [k, resolve(v)])),
     }));
@@ -403,6 +422,7 @@ export const useStore = create<State>((set, get) => ({
           type: bp.type,
           name: bp.name,
           enabled: true,
+          assetId,
           sources: Object.fromEntries(Object.entries(bp.sources).map(([k, t]) =>
             [k, t === "detection" ? r.pass.id : r.posePassId])),
           params: { ...(defaultParams(layerDef(bp.type)!) ?? {}), ...(bp.params ?? {}) },
@@ -427,6 +447,7 @@ export const useStore = create<State>((set, get) => ({
         type: bp.type,
         name: bp.name,
         enabled: true,
+        assetId,
         sources: Object.fromEntries(Object.entries(bp.sources).map(([k, t]) => [k, byType(t)])),
         params: { ...(defaultParams(layerDef(bp.type)!) ?? {}), ...(bp.params ?? {}) },
         blend: bp.blend ?? { mode: "normal", opacity: 1.0 },

@@ -16,7 +16,11 @@ const isInert = (l: RenderLayer) =>
   (layerDef(l.type)?.sources ?? []).some((s) => s.required && !l.sources[s.key]);
 
 export function LayersPanel() {
-  const layers = useStore(useShallow((s) => s.project?.renderLayers ?? []));
+  // layers are per-clip: show and mutate only the selected asset's stack
+  const allLayers = useStore(useShallow((s) => s.project?.renderLayers ?? []));
+  const selectedAssetId = useStore((s) => s.selectedAssetId);
+  const layers = allLayers.filter((l) => !l.assetId || l.assetId === selectedAssetId);
+  const others = allLayers.filter((l) => l.assetId && l.assetId !== selectedAssetId);
   const passes = useStore(useShallow((s) => s.passes.filter((p) => p.assetId === s.selectedAssetId && p.status === "ready")));
   const setLayers = useStore((s) => s.setLayers);
   const updateLayer = useStore((s) => s.updateLayer);
@@ -26,14 +30,18 @@ export function LayersPanel() {
   const [dragging, setDragging] = useState<string | null>(null);
   const [over, setOver] = useState<{ idx: number; below: boolean } | null>(null);
 
+  /** commit a mutation of THIS asset's stack, preserving other clips' layers */
+  const commit = (visibleNext: RenderLayer[]) => setLayers([...others, ...visibleNext]);
+
   // add a layer, auto-routing any required input to the most recent matching pass
   const addLayer = (d: LayerDef) => {
     const l = newLayer(d);
+    l.assetId = selectedAssetId;
     for (const src of d.sources) {
       const cands = passes.filter((p: VisionPass) => src.passTypes.includes(p.type));
       if (cands.length) l.sources[src.key] = cands[cands.length - 1].id;
     }
-    setLayers([...layers, l]);
+    commit([...layers, l]);
     selectLayer(l.id);
     setAdding(false);
   };
@@ -53,7 +61,7 @@ export function LayersPanel() {
     const next = [...layers];
     const [moved] = next.splice(from, 1);
     next.splice(insertAt, 0, moved);
-    setLayers(next);
+    commit(next);
   };
 
   return (
@@ -113,11 +121,11 @@ export function LayersPanel() {
             <button title="duplicate" onClick={(e) => {
               e.stopPropagation();
               const copy = { ...l, id: uniqueId(), name: l.name + " copy" };
-              setLayers([...layers.slice(0, i + 1), copy, ...layers.slice(i + 1)]);
+              commit([...layers.slice(0, i + 1), copy, ...layers.slice(i + 1)]);
             }}>⧉</button>
             <button title="delete" onClick={(e) => {
               e.stopPropagation();
-              setLayers(layers.filter((x) => x.id !== l.id));
+              commit(layers.filter((x) => x.id !== l.id));
               if (selected === l.id) selectLayer(null);
             }}>✕</button>
           </li>

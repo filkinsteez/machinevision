@@ -11,7 +11,8 @@ export function ExportPanel() {
   const refresh = useStore((s) => s.refresh);
   const baking = useStore((s) => s.baking);
   const setError = useStore((s) => s.setError);
-  const layers = useStore(useShallow((s) => s.project?.renderLayers ?? []));
+  const layers = useStore(useShallow((s) =>
+    (s.project?.renderLayers ?? []).filter((l) => !l.assetId || l.assetId === s.selectedAssetId)));
   const [moshParams, setMoshParams] = useState({
     mode: "subject", strength: 0.9, keyframeDistance: 15, dupEvery: 30, dupCount: 2, seed: 1234,
   });

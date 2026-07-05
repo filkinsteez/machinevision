@@ -124,20 +124,20 @@ export function PreviewCanvas() {
         ? Math.min(Math.floor(v.currentTime * fps), (a.frameCount ?? 1) - 1)
         : 0;
       if (frame !== s.currentFrame && s.playing) s.setFrame(frame);
-      const layers = [...(s.project?.renderLayers ?? [])];
+      const layers = s.assetLayers();
       const viz = s.visiblePassId
         ? passVizLayer(s.passes.find((p) => p.id === s.visiblePassId) as VisionPass)
         : null;
-      if (viz) layers.push(viz);
+      const stack = viz ? [...layers, viz] : layers;
       const audioCfg = s.audioConfig();
       const audio: AudioFrame =
         audioCfg.enabled && a.type === "video" ? audioEngine.sample(audioCfg) : ZERO_AUDIO;
       try {
-        comp.render(source, layers, frame, v ?? undefined, audio);
+        comp.render(source, stack, frame, v ?? undefined, audio);
       } catch (e) { console.error(e); }
       const octx = ovRef.current?.getContext("2d");
       if (octx && ovRef.current) {
-        drawOverlays(octx, layers, s.passes, frame, ovRef.current.width, ovRef.current.height);
+        drawOverlays(octx, stack, s.passes, frame, ovRef.current.width, ovRef.current.height);
         drawPromptMarkers(octx, ovRef.current.width, ovRef.current.height);
       }
     };
@@ -164,7 +164,7 @@ export function PreviewCanvas() {
         const exportId = await bakeExport({
           asset: a, projectId: s.project.id, video: videoRef.current,
           imageBitmap: imageRef.current, compositor: compRef.current,
-          layers: s.project.renderLayers, passes: s.passes, audioFrames,
+          layers: s.assetLayers(), passes: s.passes, audioFrames,
           onProgress: (f) => useStore.getState().setBaking({ active: true, progress: f }),
         });
         // frames are uploaded; the server is encoding — wait, then hand the

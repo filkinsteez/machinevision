@@ -21,7 +21,7 @@ export default function App() {
   const baking = useStore((s) => s.baking);
   const canBake = useStore((s) => {
     const a = s.assets.find((x) => x.id === s.selectedAssetId);
-    return !!a && a.status === "ready" && (s.project?.renderLayers.length ?? 0) > 0 && !s.baking;
+    return !!a && a.status === "ready" && s.assetLayers().length > 0 && !s.baking;
   });
   const [rightTab, setRightTab] = useState<RightTab>("layer");
   const [dropping, setDropping] = useState(false);
