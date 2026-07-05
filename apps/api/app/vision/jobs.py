@@ -304,6 +304,70 @@ def run_landmarks(ctx):
     sol = None
     pose_sol = None
     try:
+        # face: YOLO pose finds every head (crowd-scale, tracked); MediaPipe
+        # meshes an upscaled crop per head. Kills the detector-dropout jank —
+        # MediaPipe's own face detector only works at selfie distance.
+        if kind == "face" and providers_people.available():
+            providers_people.reset_tracker()
+            total = asset.frame_count or 1
+            frames_meta = []
+            frames_with = 0
+            faces_seen: set[int] = set()
+            ema: dict[int, np.ndarray] = {}  # per-track landmark smoothing
+            last = 0
+            MAX_FACES = 8
+            for idx, frame in _frames(asset):
+                if ctx.cancelled:
+                    passes.fail_pass(pass_id, "cancelled")
+                    return None
+                h_, w_ = frame.shape[:2]
+                people = providers_people.track_frame(frame)
+                heads = []
+                for q in people:
+                    box = providers.head_box_from_pose(q["points"], w_, h_)
+                    if box is None:
+                        # extreme close-ups: head kps clip out — use the top of
+                        # the person box as the head region
+                        bx0, by0, bx1, by1 = [q["bbox"][i] * (w_ if i % 2 == 0 else h_)
+                                              for i in range(4)]
+                        bw = bx1 - bx0
+                        box = (int(bx0 + bw * 0.1), int(by0),
+                               int(bx1 - bw * 0.1), int(by0 + (by1 - by0) * 0.5))
+                    heads.append((q["trackId"], box, (box[2] - box[0])))
+                heads.sort(key=lambda t: -t[2])  # biggest heads first
+                ents = []
+                for tid, box, _sz in heads[:MAX_FACES]:
+                    pts = providers.mesh_on_crop(frame, box)
+                    if pts is None:
+                        ema.pop(tid, None)
+                        continue
+                    arr = np.asarray(pts, dtype=np.float32)
+                    prev = ema.get(tid)
+                    if prev is not None and prev.shape == arr.shape:
+                        arr = prev * 0.45 + arr * 0.55  # calm inter-frame jitter
+                    ema[tid] = arr
+                    faces_seen.add(tid)
+                    ents.append({"id": f"face_{tid}",
+                                 "points": [[round(float(v), 4) for v in p] for p in arr]})
+                if ents:
+                    frames_with += 1
+                frames_meta.append({"frame": idx, "entities": ents})
+                last = idx
+                if idx % 10 == 0:
+                    ctx.update(idx / total, f"face mesh frame {idx}/{total}")
+            ver = f"{providers_people.version()} + {providers.mediapipe_version()} crops"
+            data_key = writer.finalize({
+                "type": "face_landmarks", "assetId": asset.id, "kind": "face",
+                "provider": "landmarks", "providerVersion": ver,
+                "width": asset.proxy_width, "height": asset.proxy_height,
+                "connections": [list(c) for c in providers.face_connections()],
+                "frames": frames_meta,
+            })
+            passes.finish_pass(pass_id, data_key, 0, last,
+                               {"seen in": f"{frames_with}/{len(frames_meta)} frames",
+                                "faces": len(faces_seen)}, ver)
+            return {"passId": pass_id}
+
         # pose goes through YOLO11-pose when the GPU is up — MediaPipe collapses
         # past ~2 people; face/hands stay MediaPipe (it's good at those)
         if kind == "pose" and providers_people.available():

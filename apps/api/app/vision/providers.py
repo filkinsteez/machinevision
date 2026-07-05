@@ -237,6 +237,8 @@ def get_landmarker(kind: str):
         connections = sorted({(c.start, c.end) for c in
                               mpv.FaceLandmarksConnections.FACE_LANDMARKS_TESSELATION})
 
+        # (see mesh_on_crop below for the crop-based path)
+
         def process(frame, idx):
             res = lm.detect_for_video(to_image(frame), ts(idx))
             return [{"id": f"face_{i}",
@@ -287,6 +289,70 @@ def get_landmarker(kind: str):
 def mediapipe_version() -> str:
     import mediapipe as mp
     return f"mediapipe-tasks/{mp.__version__}"
+
+
+# ---- crop-based face mesh -----------------------------------------------
+# MediaPipe's mesh is excellent; its face DETECTOR is the weak link on real
+# footage (built for selfie-distance faces). When YOLO pose tells us where
+# heads are, we mesh upscaled crops instead — no detector dropout.
+
+_crop_state: dict = {}
+
+
+def face_connections() -> list[tuple[int, int]]:
+    from mediapipe.tasks.python import vision as mpv
+    return sorted({(c.start, c.end) for c in
+                   mpv.FaceLandmarksConnections.FACE_LANDMARKS_TESSELATION})
+
+
+def _get_crop_mesher():
+    if "mesher" not in _crop_state:
+        from mediapipe.tasks.python import BaseOptions
+        from mediapipe.tasks.python import vision as mpv
+        _crop_state["mesher"] = mpv.FaceLandmarker.create_from_options(
+            mpv.FaceLandmarkerOptions(
+                base_options=BaseOptions(model_asset_path=_landmark_model_path("face")),
+                running_mode=mpv.RunningMode.IMAGE, num_faces=1,
+                min_face_detection_confidence=0.3, min_face_presence_confidence=0.3))
+    return _crop_state["mesher"]
+
+
+CROP_SIZE = 320  # mesh input — small faces get upscaled to this
+
+
+def mesh_on_crop(frame_bgr: np.ndarray, box_px: tuple[int, int, int, int]):
+    """Run the 478-pt mesh on a head crop; return points in full-frame
+    normalized coords, or None if no face in the crop."""
+    import mediapipe as mp
+    h, w = frame_bgr.shape[:2]
+    x0, y0, x1, y1 = box_px
+    x0, y0 = max(x0, 0), max(y0, 0)
+    x1, y1 = min(x1, w), min(y1, h)
+    if x1 - x0 < 12 or y1 - y0 < 12:
+        return None
+    crop = frame_bgr[y0:y1, x0:x1]
+    crop = cv2.resize(crop, (CROP_SIZE, CROP_SIZE), interpolation=cv2.INTER_CUBIC)
+    img = mp.Image(image_format=mp.ImageFormat.SRGB,
+                   data=cv2.cvtColor(crop, cv2.COLOR_BGR2RGB))
+    res = _get_crop_mesher().detect(img)
+    if not res.face_landmarks:
+        return None
+    cw, ch = (x1 - x0), (y1 - y0)
+    return [[round((x0 + p.x * cw) / w, 4), round((y0 + p.y * ch) / h, 4),
+             round(p.z, 4)] for p in res.face_landmarks[0]]
+
+
+def head_box_from_pose(points: list[list[float]], w: int, h: int):
+    """Square head crop (px) from COCO head keypoints (0 nose, 1/2 eyes, 3/4 ears)."""
+    vis = [(p[0] * w, p[1] * h) for p in points[:5] if len(p) > 3 and p[3] > 0.3]
+    if len(vis) < 2:
+        return None
+    xs = [v[0] for v in vis]
+    ys = [v[1] for v in vis]
+    cx, cy = sum(xs) / len(xs), sum(ys) / len(ys)
+    span = max(max(xs) - min(xs), max(ys) - min(ys), 10.0)
+    half = span * 1.7
+    return (int(cx - half), int(cy - half * 1.15), int(cx + half), int(cy + half * 1.1))
 
 
 # ---------------------------------------------------------------- optical flow
