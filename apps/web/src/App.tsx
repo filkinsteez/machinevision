@@ -18,6 +18,11 @@ export default function App() {
   const upload = useStore((s) => s.upload);
   const project = useStore((s) => s.project);
   const selectedLayerId = useStore((s) => s.selectedLayerId);
+  const baking = useStore((s) => s.baking);
+  const canBake = useStore((s) => {
+    const a = s.assets.find((x) => x.id === s.selectedAssetId);
+    return !!a && a.status === "ready" && (s.project?.renderLayers.length ?? 0) > 0 && !s.baking;
+  });
   const [rightTab, setRightTab] = useState<RightTab>("layer");
   const [dropping, setDropping] = useState(false);
   const dragDepth = useRef(0);
@@ -80,6 +85,16 @@ export default function App() {
         <span className="logo">MACHINE INDUSTRIES</span>
         <span className="dim">{project?.name ?? "…"}</span>
         <span className="dim right">machine.industries · v0.2</span>
+        <button
+          className="go export-hdr"
+          title={canBake ? "Render and download what the preview shows" : "Add media and an effect first"}
+          onClick={() => {
+            setRightTab("export");
+            if (canBake) window.dispatchEvent(new Event("mv-bake"));
+          }}
+        >
+          {baking ? `EXPORTING ${(baking.progress * 100).toFixed(0)}%` : "EXPORT ↓"}
+        </button>
       </header>
       <div className="cols">
         <aside className="left">

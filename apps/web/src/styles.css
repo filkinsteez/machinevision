@@ -270,6 +270,9 @@ input[type="number"].seed { width: 72px; }
 .subject-row input { flex: 1; min-width: 0; }
 .subject-row button { padding: 3px 8px; font-size: 12px; }
 
+/* header export — the one action that must never be hunted for */
+.export-hdr { padding: 5px 14px; font-size: 11px; letter-spacing: 0.12em; }
+
 /* whole-window drop */
 .drop-overlay {
   position: fixed; inset: 0; z-index: 100;
