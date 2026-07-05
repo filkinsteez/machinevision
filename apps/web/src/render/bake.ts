@@ -16,7 +16,7 @@ export async function bakeExport(opts: {
   passes: VisionPass[];
   audioFrames?: AudioFrame[];
   onProgress: (f: number) => void;
-}): Promise<void> {
+}): Promise<string> {
   const { asset, projectId, video, imageBitmap, compositor, layers, passes, audioFrames, onProgress } = opts;
   const w = compositor.width;
   const h = compositor.height;
@@ -60,5 +60,6 @@ export async function bakeExport(opts: {
     await api.uploadBakeFrame(sessionId, f, blob);
     onProgress((f + 1) / frameCount);
   }
-  await api.finalizeBake(sessionId, projectId, fps, asset.type === "video" ? "video" : "image", asset.id);
+  const r = await api.finalizeBake(sessionId, projectId, fps, asset.type === "video" ? "video" : "image", asset.id);
+  return r.export.id;
 }

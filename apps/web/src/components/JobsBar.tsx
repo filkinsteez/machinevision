@@ -8,6 +8,8 @@ export function JobsBar() {
   const jobs = useStore((s) => s.jobs);
   const error = useStore((s) => s.error);
   const setError = useStore((s) => s.setError);
+  const notice = useStore((s) => s.notice);
+  const setNotice = useStore((s) => s.setNotice);
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
 
   const active = jobs.filter((j) => j.status === "queued" || j.status === "running");
@@ -20,6 +22,11 @@ export function JobsBar() {
 
   return (
     <div className="jobs-bar">
+      {notice && (
+        <span className="job ok" onClick={() => setNotice(null)} title="dismiss">
+          ✓ {notice.slice(0, 160)} ✕
+        </span>
+      )}
       {error && (
         <span className="job err" onClick={() => setError(null)} title="dismiss">
           ⚠ {error.slice(0, 160)} ✕

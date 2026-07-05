@@ -161,12 +161,36 @@ export function PreviewCanvas() {
           const frameCount = a.frameCount ?? 1;
           audioFrames = await analyzeAudioOffline(a.proxyUrl, fps, frameCount, audioCfg);
         }
-        await bakeExport({
+        const exportId = await bakeExport({
           asset: a, projectId: s.project.id, video: videoRef.current,
           imageBitmap: imageRef.current, compositor: compRef.current,
           layers: s.project.renderLayers, passes: s.passes, audioFrames,
           onProgress: (f) => useStore.getState().setBaking({ active: true, progress: f }),
         });
+        // frames are uploaded; the server is encoding — wait, then hand the
+        // user the file instead of hiding it in a list
+        useStore.getState().setBaking({ active: true, progress: 1 });
+        const { api } = await import("../api");
+        const deadline = Date.now() + 240000;
+        while (Date.now() < deadline) {
+          const rec = (await api.listExports(s.project.id)).find((x) => x.id === exportId);
+          if (rec?.status === "ready" && rec.outputUrl) {
+            const link = document.createElement("a");
+            link.href = rec.outputUrl;
+            const base = a.name.replace(/\.[^.]+$/, "");
+            link.download = `${base}.machineindustries.${rec.format === "png" ? "png" : "mp4"}`;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            useStore.getState().setNotice(`Saved to your Downloads folder: ${link.download}`);
+            break;
+          }
+          if (rec?.status === "failed") {
+            useStore.getState().setError("Export encoding failed — check the jobs bar.");
+            break;
+          }
+          await new Promise((r) => setTimeout(r, 1500));
+        }
         await s.refresh();
       } catch (e) {
         s.setError(String(e));

@@ -28,6 +28,8 @@ interface State {
   effectBusy: string | null;
   subjectPrompt: string;
   setSubjectPrompt: (p: string) => void;
+  notice: string | null;
+  setNotice: (n: string | null) => void;
 
   boot: () => Promise<void>;
   refresh: () => Promise<void>;
@@ -101,6 +103,8 @@ export const useStore = create<State>((set, get) => ({
   effectBusy: null,
   subjectPrompt: "",
   setSubjectPrompt: (subjectPrompt) => set({ subjectPrompt }),
+  notice: null,
+  setNotice: (notice) => set({ notice }),
   error: null,
 
   boot: async () => {
