@@ -52,6 +52,42 @@ export function PreviewCanvas() {
   const compRef = useRef<Compositor | null>(null);
   const imageRef = useRef<ImageBitmap | null>(null);
   const boxDrag = useRef<{ x: number; y: number } | null>(null);
+  // hidden donor-clip videos for ghost_blend layers, keyed by asset id
+  const ghostVideosRef = useRef<Map<string, HTMLVideoElement>>(new Map());
+
+  const getGhostVideo = (donorAssetId: string): HTMLVideoElement | null => {
+    const cached = ghostVideosRef.current.get(donorAssetId);
+    if (cached) return cached;
+    const donor = useStore.getState().assets.find((x) => x.id === donorAssetId);
+    if (!donor?.proxyUrl) return null;
+    const gv = document.createElement("video");
+    gv.src = donor.proxyUrl;
+    gv.muted = true;
+    gv.loop = true;
+    gv.playsInline = true;
+    gv.preload = "auto";
+    ghostVideosRef.current.set(donorAssetId, gv);
+    return gv;
+  };
+
+  /** the active ghost_blend layer's donor frame, kept in loose sync with playback */
+  const ghostSourceForStack = (stack: { type: string; enabled: boolean; params: Record<string, unknown> }[],
+                               playing: boolean): TexImageSource | null => {
+    const gl_ = stack.find((l) => l.enabled && l.type === "ghost_blend" && typeof l.params.donorAssetId === "string");
+    if (!gl_) return null;
+    const gv = getGhostVideo(String(gl_.params.donorAssetId));
+    if (!gv || gv.readyState < 2) return null;
+    const main = videoRef.current;
+    const target = main ? main.currentTime % (gv.duration || 1) : 0;
+    if (playing) {
+      if (gv.paused) gv.play().catch(() => undefined);
+      if (Math.abs(gv.currentTime - target) > 0.25) gv.currentTime = target;
+    } else {
+      if (!gv.paused) gv.pause();
+      if (Math.abs(gv.currentTime - target) > 0.05) gv.currentTime = target;
+    }
+    return gv;
+  };
 
   const asset = useStore((s) => s.assets.find((a) => a.id === s.selectedAssetId) ?? null);
   const tool = useStore((s) => s.tool);
@@ -132,8 +168,9 @@ export function PreviewCanvas() {
       const audioCfg = s.audioConfig();
       const audio: AudioFrame =
         audioCfg.enabled && a.type === "video" ? audioEngine.sample(audioCfg) : ZERO_AUDIO;
+      const ghost = ghostSourceForStack(stack, s.playing);
       try {
-        comp.render(source, stack, frame, v ?? undefined, audio);
+        comp.render(source, stack, frame, v ?? undefined, audio, ghost);
       } catch (e) { console.error(e); }
       const octx = ovRef.current?.getContext("2d");
       if (octx && ovRef.current) {
@@ -161,10 +198,27 @@ export function PreviewCanvas() {
           const frameCount = a.frameCount ?? 1;
           audioFrames = await analyzeAudioOffline(a.proxyUrl, fps, frameCount, audioCfg);
         }
+        // frame-exact donor seeks for any ghost_blend layer in this clip's stack
+        const bakeLayers = s.assetLayers();
+        const ghostLayer = bakeLayers.find((l) => l.enabled && l.type === "ghost_blend" && typeof l.params.donorAssetId === "string");
+        const gv = ghostLayer ? getGhostVideo(String(ghostLayer.params.donorAssetId)) : null;
+        const fps0 = a.fps ?? 30;
+        const getGhostFrame = gv ? async (f: number) => {
+          const t = ((f + 0.5) / fps0) % (gv.duration || 1);
+          if (Math.abs(gv.currentTime - t) > 0.02) {
+            await new Promise<void>((res) => {
+              const cb = () => { gv.removeEventListener("seeked", cb); res(); };
+              gv.addEventListener("seeked", cb);
+              gv.currentTime = t;
+            });
+          }
+          return gv.readyState >= 2 ? gv : null;
+        } : undefined;
+
         const exportId = await bakeExport({
           asset: a, projectId: s.project.id, video: videoRef.current,
           imageBitmap: imageRef.current, compositor: compRef.current,
-          layers: s.assetLayers(), passes: s.passes, audioFrames,
+          layers: bakeLayers, passes: s.passes, audioFrames, getGhostFrame,
           onProgress: (f) => useStore.getState().setBaking({ active: true, progress: f }),
         });
         // frames are uploaded; the server is encoding — wait, then hand the

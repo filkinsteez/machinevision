@@ -269,6 +269,31 @@ void main() {
   frag = composite(src, fx, present);
 }`,
 
+  // the donor clip's ACTUAL pixels blended into this clip — the "I can see the
+  // other video through it" part of the original cross-clip glitch
+  ghost_blend: COMMON + `
+uniform sampler2D u_ghost;
+uniform int u_hasGhost;
+uniform int u_mode;    // 0 screen, 1 difference, 2 subject (donor-mask gated), 3 luma-key
+uniform float u_amount;
+uniform float u_key;
+void main() {
+  vec3 src = texture(u_src, v_uv).rgb;
+  if (u_hasGhost == 0) { frag = vec4(src, 1.0); return; }
+  vec3 g = texture(u_ghost, v_uv).rgb;
+  float gate = 1.0;
+  if (u_mode == 2) gate = maskAt(v_uv);                     // donor's subject only
+  else if (u_mode == 3) {                                   // bright parts only
+    float gLuma = dot(g, vec3(0.299, 0.587, 0.114));
+    gate = smoothstep(u_key, u_key + 0.18, gLuma);
+  }
+  vec3 fx;
+  if (u_mode == 1) fx = abs(src - g);                       // difference
+  else fx = 1.0 - (1.0 - src) * (1.0 - g);                  // screen
+  float w = gate * u_amount * (1.0 + u_level * 0.6 + u_beat * 0.5);
+  frag = composite(src, mix(src, fx, clamp(w, 0.0, 1.0)), 1.0);
+}`,
+
   datamosh_preview: COMMON + `
 uniform sampler2D u_flow;
 uniform sampler2D u_prev;

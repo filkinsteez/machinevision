@@ -457,11 +457,25 @@ export const useStore = create<State>((set, get) => ({
         const built: RenderLayer[] = [];
         const gMask = dp("mask");
         const gFlow = dp("optical_flow");
-        if (gMask) {
-          built.push(mk("matte_view", "Ghost Matte", { mask: gMask },
-            { mode: "tint", color: "#FF5A00", amount: 0.55, invert: false },
-            { mode: "screen", opacity: 0.85 }));
+        // 1. the core of the original glitch: the donor's ACTUAL pixels
+        //    blended through this clip (donorAssetId drives a hidden synced video)
+        built.push(mk("ghost_blend", "Blend-Through", gMask ? { mask: gMask } : {},
+          { mode: "screen", amount: 0.65, key: 0.35, donorAssetId: donorAsset }));
+        // 2. the donor's FORMS as fields — this is what read as "the other video
+        //    showing through" in the accident: its people rendered as depth heat
+        //    and body-part color inside this clip
+        const gDepth = dp("depth");
+        if (gDepth) {
+          built.push(mk("sapiens_depth", "Ghost Depth", { field: gDepth },
+            { mode: "colormap", color: "#2962FF" }, { mode: "screen", opacity: 0.5 }));
         }
+        const gParts = dp("body_parts");
+        if (gParts) {
+          built.push(mk("body_parts", "Ghost Parts", { field: gParts },
+            { mode: "colorize", partId: "3: Hair", color: "#FF5A00", saturation: 0.7 },
+            { mode: "screen", opacity: 0.45 }));
+        }
+        // 3. motion contamination + phantom skeletons
         if (gMask && gFlow) {
           built.push(mk("datamosh_preview", "Ghost Mosh", { mask: gMask, flow: gFlow },
             { mode: "subject", strength: 0.9, decay: 0.97, blockSize: 14, edgeLeak: 0.45, seed: 66 }));

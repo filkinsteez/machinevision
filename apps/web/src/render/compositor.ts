@@ -24,6 +24,7 @@ export class Compositor {
   private flowTex: WebGLTexture;
   private sortedTex: WebGLTexture;
   private fieldTex: WebGLTexture;
+  private ghostTex: WebGLTexture;
   private atlasTex: WebGLTexture;
   private nGlyphs: number;
   private blackTex: WebGLTexture;
@@ -49,6 +50,7 @@ export class Compositor {
     this.flowTex = createTexture(gl, width, height);
     this.sortedTex = createTexture(gl, width, height);
     this.fieldTex = createTexture(gl, width, height);
+    this.ghostTex = createTexture(gl, width, height);
     this.blackTex = createTexture(gl, 2, 2);
     const atlas = buildGlyphAtlas();
     this.nGlyphs = atlas.nGlyphs;
@@ -86,11 +88,18 @@ export class Compositor {
     this.u1f(prog, "u_beat", aud.beat);
   }
 
-  /** Renders the layer stack for the current frame. */
-  render(source: TexImageSource, layers: RenderLayer[], frame: number, videoEl?: HTMLVideoElement, audio?: AudioFrame) {
+  /** Renders the layer stack for the current frame. `ghost` = another clip's
+   * frame, consumed by ghost_blend layers. */
+  render(source: TexImageSource, layers: RenderLayer[], frame: number,
+         videoEl?: HTMLVideoElement, audio?: AudioFrame, ghost?: TexImageSource | null) {
     const gl = this.gl;
     uploadImage(gl, this.srcTex, source);
     uploadImage(gl, this.origTex, source);
+    let hasGhost = 0;
+    if (ghost) {
+      uploadImage(gl, this.ghostTex, ghost);
+      hasGhost = 1;
+    }
 
     const seek = Math.abs(frame - this.lastFrame) > 4 || frame < this.lastFrame;
     this.lastFrame = frame;
@@ -165,6 +174,12 @@ export class Compositor {
         if (videoEl ?? source) {
           this.pixelSort.request(layer, source, maskPassId, frame, this.width, this.height);
         }
+      }
+
+      // cross-clip pixel blend
+      if (layer.type === "ghost_blend") {
+        this.bindTex(prog, "u_ghost", 8, hasGhost ? this.ghostTex : this.blackTex);
+        this.u1i(prog, "u_hasGhost", hasGhost);
       }
 
       // Sapiens field routing (body_parts / depth / normals)
@@ -268,6 +283,11 @@ export class Compositor {
       case "depth_displace":
         this.u1i(prog, "u_mode", select("mode", ["relief", "parallax"]));
         this.u1f(prog, "u_strength", Number(p.strength ?? 1));
+        break;
+      case "ghost_blend":
+        this.u1i(prog, "u_mode", select("mode", ["screen", "difference", "subject", "luma-key"]));
+        this.u1f(prog, "u_amount", Number(p.amount ?? 0.65));
+        this.u1f(prog, "u_key", Number(p.key ?? 0.35));
         break;
       case "datamosh_preview":
         this.u1f(prog, "u_strength", Number(p.strength ?? 0.85));

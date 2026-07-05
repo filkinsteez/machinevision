@@ -15,9 +15,11 @@ export async function bakeExport(opts: {
   layers: RenderLayer[];
   passes: VisionPass[];
   audioFrames?: AudioFrame[];
+  /** frame-exact donor frame for ghost_blend layers */
+  getGhostFrame?: (f: number) => Promise<TexImageSource | null>;
   onProgress: (f: number) => void;
 }): Promise<string> {
-  const { asset, projectId, video, imageBitmap, compositor, layers, passes, audioFrames, onProgress } = opts;
+  const { asset, projectId, video, imageBitmap, compositor, layers, passes, audioFrames, getGhostFrame, onProgress } = opts;
   const w = compositor.width;
   const h = compositor.height;
   const out = document.createElement("canvas");
@@ -51,7 +53,8 @@ export async function bakeExport(opts: {
     if (!source) throw new Error("no frame source");
     // wait for mask/flow textures to be available for this frame (best effort)
     await new Promise((r) => setTimeout(r, f === 0 ? 200 : 0));
-    compositor.render(source, layers, f, video ?? undefined, audioFrames?.[f]);
+    const ghost = getGhostFrame ? await getGhostFrame(f) : null;
+    compositor.render(source, layers, f, video ?? undefined, audioFrames?.[f], ghost);
     drawOverlays(octx, layers, passes, f, w, h);
     ctx.drawImage(compositor.canvas, 0, 0);
     ctx.drawImage(overlayCanvas, 0, 0);

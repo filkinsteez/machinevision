@@ -150,6 +150,18 @@ export const LAYER_DEFS: LayerDef[] = [
     },
   },
   {
+    type: "ghost_blend",
+    label: "Blend-Through",
+    engine: "gl",
+    description: "Another clip's actual pixels blended through this one — the cross-clip ghost.",
+    sources: [{ key: "mask", passTypes: ["mask", "edge_matte"], required: false }],
+    params: {
+      mode: { kind: "select", options: ["screen", "difference", "subject", "luma-key"], default: "screen", label: "Blend" },
+      amount: { kind: "slider", min: 0, max: 1, step: 0.01, default: 0.65, label: "Amount" },
+      key: { kind: "slider", min: 0, max: 1, step: 0.01, default: 0.35, label: "Luma Key" },
+    },
+  },
+  {
     type: "datamosh_preview",
     label: "Datamosh (Preview)",
     engine: "gl",
