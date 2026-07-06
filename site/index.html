@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>machine.industries — coming soon</title>
+<meta name="description" content="Machine Industries. Coming soon.">
+<meta property="og:title" content="machine.industries">
+<meta property="og:description" content="coming soon">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%23000'/%3E%3Crect x='4' y='4' width='8' height='8' fill='%23FF5A00'/%3E%3C/svg%3E">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    background: #000;
+    color: #e8e8e8;
+    font-family: ui-monospace, "Cascadia Mono", "JetBrains Mono", Consolas, monospace;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap { text-align: center; padding: 0 16px; }
+
+  .mark {
+    width: 10px; height: 10px;
+    background: #FF5A00;
+    margin: 0 auto 28px;
+    animation: blink 2.4s steps(1) infinite;
+  }
+  @keyframes blink { 0%, 92% { opacity: 1; } 93%, 100% { opacity: 0.15; } }
+
+  h1 {
+    position: relative;
+    font-size: clamp(22px, 5.5vw, 54px);
+    font-weight: 500;
+    letter-spacing: 0.14em;
+    color: #f2f2f2;
+    white-space: nowrap;
+  }
+  /* two offset copies, sliced and shifted — the glitch */
+  h1::before, h1::after {
+    content: attr(data-text);
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    pointer-events: none;
+  }
+  h1::before { color: #FF5A00; z-index: -1; }
+  h1::after  { color: #2962FF; z-index: -2; }
+  .burst h1::before { opacity: 0.9; animation: slice-a 0.28s steps(4) both; }
+  .burst h1::after  { opacity: 0.9; animation: slice-b 0.28s steps(4) both; }
+  @keyframes slice-a {
+    0%   { clip-path: inset(12% 0 74% 0); transform: translate(-4px, -1px); }
+    25%  { clip-path: inset(58% 0 22% 0); transform: translate(3px, 1px); }
+    50%  { clip-path: inset(30% 0 48% 0); transform: translate(-2px, 0); }
+    75%  { clip-path: inset(80% 0 4% 0);  transform: translate(4px, 1px); }
+    100% { clip-path: inset(44% 0 40% 0); transform: translate(-3px, 0); }
+  }
+  @keyframes slice-b {
+    0%   { clip-path: inset(64% 0 18% 0); transform: translate(4px, 1px); }
+    25%  { clip-path: inset(8% 0 78% 0);  transform: translate(-3px, -1px); }
+    50%  { clip-path: inset(50% 0 34% 0); transform: translate(2px, 0); }
+    75%  { clip-path: inset(24% 0 60% 0); transform: translate(-4px, -1px); }
+    100% { clip-path: inset(70% 0 12% 0); transform: translate(3px, 0); }
+  }
+  .burst h1 { animation: shudder 0.28s steps(2) both; }
+  @keyframes shudder {
+    0% { transform: translate(1px, 0); } 50% { transform: translate(-1px, 0); } 100% { transform: none; }
+  }
+
+  .sub {
+    margin-top: 22px;
+    font-size: clamp(10px, 1.6vw, 13px);
+    letter-spacing: 0.5em;
+    text-indent: 0.5em; /* recenter: letter-spacing pads the right edge */
+    color: #666;
+    text-transform: uppercase;
+  }
+  .sub .cursor {
+    display: inline-block;
+    width: 0.55em; height: 1em;
+    background: #FF5A00;
+    vertical-align: text-bottom;
+    margin-left: 0.35em;
+    animation: blink 1.1s steps(1) infinite;
+  }
+
+  /* scanlines + vignette */
+  .scan {
+    position: fixed; inset: 0;
+    pointer-events: none;
+    background:
+      repeating-linear-gradient(0deg, rgba(255,255,255,0.04) 0 1px, transparent 1px 3px);
+    mix-blend-mode: overlay;
+  }
+  .vig {
+    position: fixed; inset: 0;
+    pointer-events: none;
+    background: radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,0.55) 100%);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .mark, .sub .cursor { animation: none; }
+    .burst h1, .burst h1::before, .burst h1::after { animation: none; opacity: 0; }
+  }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="mark"></div>
+    <h1 id="wordmark" data-text="machine.industries">machine.industries</h1>
+    <div class="sub">coming soon<span class="cursor"></span></div>
+  </div>
+  <div class="scan"></div>
+  <div class="vig"></div>
+<script>
+(() => {
+  if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  const body = document.body;
+  const h1 = document.getElementById("wordmark");
+  const REAL = h1.textContent;
+  const GLYPHS = "█▓▒░<>/\\|{}[]()#%&@$*+=~^?!01";
+
+  const scramble = () => {
+    const chars = REAL.split("");
+    const hits = 1 + Math.floor(Math.random() * 3);
+    for (let i = 0; i < hits; i++) {
+      const at = Math.floor(Math.random() * chars.length);
+      chars[at] = GLYPHS[Math.floor(Math.random() * GLYPHS.length)];
+    }
+    const text = chars.join("");
+    h1.textContent = text;
+    h1.setAttribute("data-text", text);
+  };
+  const restore = () => {
+    h1.textContent = REAL;
+    h1.setAttribute("data-text", REAL);
+  };
+
+  const burst = () => {
+    body.classList.add("burst");
+    scramble();
+    const flickers = setInterval(scramble, 70);
+    setTimeout(() => {
+      clearInterval(flickers);
+      restore();
+      body.classList.remove("burst");
+    }, 180 + Math.random() * 220);
+    schedule();
+  };
+  const schedule = () => setTimeout(burst, 1200 + Math.random() * 3800);
+  schedule();
+})();
+</script>
+</body>
+</html>
