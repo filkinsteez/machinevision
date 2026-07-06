@@ -27,12 +27,37 @@
 
   .wrap { text-align: center; padding: 0 16px; }
 
+  /* tracking frame: corner brackets + tiny readouts, barely there */
+  .lockup { position: relative; display: inline-block; padding: 36px 48px 32px; }
+  .frame span {
+    position: absolute;
+    width: 13px; height: 13px;
+    border: 0 solid rgba(255, 90, 0, 0.5);
+  }
+  .frame .tl { top: 0; left: 0; border-top-width: 1px; border-left-width: 1px; }
+  .frame .tr { top: 0; right: 0; border-top-width: 1px; border-right-width: 1px; }
+  .frame .bl { bottom: 0; left: 0; border-bottom-width: 1px; border-left-width: 1px; }
+  .frame .br { bottom: 0; right: 0; border-bottom-width: 1px; border-right-width: 1px; }
+  .burst .frame { transform: translate(1px, -1px); }
+  .readout {
+    position: absolute;
+    font-size: 9px;
+    letter-spacing: 0.26em;
+    text-transform: uppercase;
+    color: #4a4a4a;
+    white-space: nowrap;
+  }
+  .readout em { font-style: normal; color: rgba(255, 90, 0, 0.75); }
+  .readout.top { top: -15px; left: 0; }
+  .readout.bot { bottom: -15px; right: 0; }
+
   .eyes {
     display: flex;
     justify-content: center;
     gap: 22px;
     margin: 0 auto 30px;
     animation: blink 3.2s steps(1) infinite;
+    transition: transform 0.14s steps(2, end);
   }
   .eye {
     width: 11px; height: 11px;
@@ -115,9 +140,14 @@
 </head>
 <body>
   <div class="wrap">
-    <div class="eyes"><div class="eye"></div><div class="eye"></div></div>
-    <h1 id="wordmark" data-text="machine.industries">machine.industries</h1>
-    <div class="sub">coming soon</div>
+    <div class="lockup">
+      <div class="frame"><span class="tl"></span><span class="tr"></span><span class="bl"></span><span class="br"></span></div>
+      <span class="readout top">0. subject <em id="conf">0.98</em></span>
+      <div class="eyes" id="eyes"><div class="eye"></div><div class="eye"></div></div>
+      <h1 id="wordmark" data-text="machine.industries">machine.industries</h1>
+      <div class="sub">coming soon</div>
+      <span class="readout bot">mesh 478 · gaze <em id="gaze">locked</em></span>
+    </div>
   </div>
   <div class="scan"></div>
   <div class="vig"></div>
@@ -158,6 +188,27 @@
   };
   const schedule = () => setTimeout(burst, 1200 + Math.random() * 3800);
   schedule();
+
+  // confidence readout drifts like a live detector
+  const conf = document.getElementById("conf");
+  setInterval(() => { conf.textContent = (0.93 + Math.random() * 0.06).toFixed(2); },
+    2200 + Math.random() * 1500);
+
+  // the eyes glance somewhere, hold, snap back — gaze re-acquiring
+  const eyes = document.getElementById("eyes");
+  const gaze = document.getElementById("gaze");
+  const glance = () => {
+    const dx = (Math.random() < 0.5 ? -1 : 1) * (2 + Math.random() * 3);
+    const dy = Math.random() < 0.3 ? 1 : 0;
+    eyes.style.transform = `translate(${dx}px, ${dy}px)`;
+    gaze.textContent = "track";
+    setTimeout(() => {
+      eyes.style.transform = "";
+      gaze.textContent = "locked";
+    }, 450 + Math.random() * 500);
+    setTimeout(glance, 3500 + Math.random() * 5500);
+  };
+  setTimeout(glance, 2500);
 })();
 </script>
 </body>
